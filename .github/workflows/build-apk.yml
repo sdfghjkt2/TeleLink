@@ -24,7 +24,11 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
-          cache: 'gradle'
+
+      - name: Setup Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
 
       - name: Generate Debug Keystore
         run: |
@@ -32,19 +36,12 @@ jobs:
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-      - name: Grant Execute Permission for Gradlew
-        run: |
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-          fi
-
       - name: Build APK with Gradle
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4096m -Djava.awt.headless=true' -Djava.awt.headless=true"
         run: |
-          if [ -f "gradlew" ]; then
-            ./gradlew assembleDebug --no-daemon -x test
-          else
-            gradle assembleDebug --no-daemon -x test
-          fi
+          gradle wrapper --gradle-version 9.3.1 || true
+          gradle :app:assembleDebug --no-daemon -x test -Djava.awt.headless=true
 
       - name: Locate Built APK
         id: find_apk
@@ -71,7 +68,7 @@ jobs:
             ## TeleLink Automated Build
             - Commit: `${{ github.sha }}`
             - Branch/Tag: `${{ github.ref_name }}`
-            - Automated APK compiled and verified for in-app auto updates.
+            - Automated APK compiled and ready for in-app auto updates.
           files: ${{ steps.find_apk.outputs.apk_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
