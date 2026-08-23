@@ -20,6 +20,7 @@ import com.example.data.model.StreamFileItem
 import com.example.data.model.UpdateStatus
 import com.example.data.repository.StreamRepository
 import com.example.server.TeleStreamHttpServer
+import com.example.server.TeleStreamService
 import com.example.util.GitHubUpdateManager
 import com.example.util.NetworkUtils
 import java.io.File
@@ -149,6 +150,7 @@ class TeleStreamViewModel(application: Application) : AndroidViewModel(applicati
             val stats = serverStats.value
             val context = getApplication<Application>()
             if (stats.isRunning) {
+                TeleStreamService.stop(context)
                 httpServer.stop()
                 botService.stopPolling()
                 Toast.makeText(context, "TeleStream Server stopped", Toast.LENGTH_SHORT).show()
@@ -156,6 +158,7 @@ class TeleStreamViewModel(application: Application) : AndroidViewModel(applicati
                 val ip = NetworkUtils.getDeviceIpAddress(context)
                 val networkType = NetworkUtils.getNetworkTypeName(context)
                 val port = botConfig.value.serverPort
+                TeleStreamService.start(context)
                 httpServer.start(port, ip, networkType)
 
                 if (botConfig.value.botToken.isNotBlank()) {

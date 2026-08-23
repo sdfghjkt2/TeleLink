@@ -71,7 +71,9 @@ class TeleStreamHttpServer(
 
         withContext(Dispatchers.IO) {
             try {
-                val socket = ServerSocket(port)
+                val socket = ServerSocket()
+                socket.reuseAddress = true
+                socket.bind(java.net.InetSocketAddress(port), 250)
                 serverSocket = socket
                 startTimeMillis = System.currentTimeMillis()
 
