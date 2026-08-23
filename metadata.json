@@ -1,0 +1,6 @@
+{
+  "name": "TeleStream",
+  "description": "Telegram file to direct browser download links converter and local network stream server host with Telegram bot integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

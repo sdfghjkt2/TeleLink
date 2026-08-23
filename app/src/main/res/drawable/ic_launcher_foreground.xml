@@ -1,0 +1,39 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Paper Plane & Streamer Arrow Icon (Safe 66dp centered in 108dp canvas) -->
+    <!-- Glow / Shadow layer -->
+    <path
+        android:fillColor="#33000000"
+        android:pathData="M32,55 L74,38 L68,78 L54,66 L44,74 L46,61 Z" />
+    <!-- Main Telegram Style Plane -->
+    <path
+        android:pathData="M30,53 L76,34 L69,76 L53,64 L42,72 L44,59 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="30"
+                android:startY="34"
+                android:endX="76"
+                android:endY="76"
+                android:type="linear">
+                <item android:color="#38BDF8" android:offset="0.0" />
+                <item android:color="#FFFFFF" android:offset="0.5" />
+                <item android:color="#22D3EE" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Fold inner shade -->
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M53,64 L69,76 L76,34 Z" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M44,59 L53,64 L76,34 Z" />
+    <!-- Streaming Download Arrow on bottom-right -->
+    <path
+        android:fillColor="#22D3EE"
+        android:pathData="M66,66 L78,66 L78,56 L84,56 L84,66 L96,66 L81,81 Z" />
+</vector>
