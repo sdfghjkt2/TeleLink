@@ -6,6 +6,7 @@ import com.example.data.model.LogLevel
 import com.example.data.model.StreamFileItem
 import com.example.data.repository.StreamRepository
 import com.example.util.NetworkUtils
+import com.example.util.TelegramDns
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,8 +43,11 @@ sealed class BotPollingStatus {
 class TelegramBotService(
     private val repository: StreamRepository,
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(35, TimeUnit.SECONDS)
-        .readTimeout(35, TimeUnit.SECONDS)
+        .dns(TelegramDns)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 ) {
     private val botScope = CoroutineScope(Dispatchers.IO + Job())
@@ -325,13 +329,18 @@ class TelegramBotService(
 
             repository.insertFile(streamItem)
 
+            // Resolve direct Telegram Cloud CDN path for instant worldwide reachability
+            val tgFilePath = fetchTelegramFilePath(token, tgFileId)
+            val globalCdnUrl = if (tgFilePath != null) {
+                "https://api.telegram.org/file/bot$token/$tgFilePath"
+            } else null
+
             val baseHost = if (config.customDomain.isNotBlank()) {
                 config.customDomain.trimEnd('/')
             } else {
                 "http://$hostIp:$port"
             }
             val downloadUrl = "$baseHost/download/$fileToken"
-            val streamUrl = "$baseHost/stream/$fileToken"
             val playerUrl = "$baseHost/player/$fileToken"
 
             val formattedSize = if (fileSize > 0) NetworkUtils.formatBytes(fileSize) else "Streamable"
@@ -345,23 +354,30 @@ class TelegramBotService(
                 FileCategory.OTHER -> "📁"
             }
 
-            val replyText = """
-                ⚡ <b>File Converted to Browser Download Link!</b> $categoryEmoji
-                
-                📄 <b>File Name:</b> <code>$fileName</code>
-                📦 <b>Size:</b> <b>$formattedSize</b>
-                🏷️ <b>Type:</b> <code>$mimeType</code>
-                
-                📥 <b>Direct Browser Download:</b>
-                <code>$downloadUrl</code>
-                
-                🎬 <b>Stream / Online Player:</b>
-                <code>$playerUrl</code>
-                
-                <i>💡 Tap the buttons below or copy the link to download directly in Chrome, Safari, IDM, ADM, or VLC!</i>
-            """.trimIndent()
+            val replyText = buildString {
+                appendLine("⚡ <b>File Converted to Browser Download Link!</b> $categoryEmoji")
+                appendLine()
+                appendLine("📄 <b>Name:</b> <code>$fileName</code>")
+                appendLine("📦 <b>Size:</b> <b>$formattedSize</b>")
+                appendLine("🏷️ <b>Type:</b> <code>$mimeType</code>")
+                appendLine()
 
-            val keyboard = createKeyboard(hostIp, port, fileToken)
+                if (globalCdnUrl != null) {
+                    appendLine("🚀 <b>Global High-Speed Download (Anywhere/Any Device):</b>")
+                    appendLine("<code>$globalCdnUrl</code>")
+                    appendLine()
+                }
+
+                appendLine("📥 <b>Local TeleStream Server Link:</b>")
+                appendLine("<code>$downloadUrl</code>")
+                appendLine()
+                appendLine("🎬 <b>Online Web Stream Player:</b>")
+                appendLine("<code>$playerUrl</code>")
+                appendLine()
+                append("<i>💡 Works directly with Chrome, Safari, IDM, 1DM, ADM, curl & VLC!</i>")
+            }
+
+            val keyboard = createKeyboard(hostIp, port, fileToken, globalCdnUrl)
             sendTelegramMessage(token, chatId, replyText, keyboard)
 
             repository.log(
@@ -373,16 +389,45 @@ class TelegramBotService(
         }
     }
 
-    private fun createKeyboard(hostIp: String, port: Int, fileToken: String?): JSONObject {
+    private suspend fun fetchTelegramFilePath(botToken: String, fileId: String): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = "https://api.telegram.org/bot$botToken/getFile?file_id=$fileId"
+                val req = Request.Builder().url(url).build()
+                okHttpClient.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val bodyStr = resp.body?.string() ?: return@withContext null
+                        val json = JSONObject(bodyStr)
+                        if (json.optBoolean("ok")) {
+                            return@withContext json.getJSONObject("result").optString("file_path")
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+            null
+        }
+    }
+
+    private fun createKeyboard(hostIp: String, port: Int, fileToken: String?, globalCdnUrl: String? = null): JSONObject {
         val config = repository.botConfig.value
-        val baseHost = if (config.customDomain.isNotBlank()) config.customDomain else "http://$hostIp:$port"
+        val baseHost = if (config.customDomain.isNotBlank()) config.customDomain.trimEnd('/') else "http://$hostIp:$port"
 
         val inlineKeyboard = JSONArray()
+
+        if (globalCdnUrl != null) {
+            val globalRow = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("text", "🚀 Global Fast Download (CDN)")
+                    put("url", globalCdnUrl)
+                })
+            }
+            inlineKeyboard.put(globalRow)
+        }
 
         if (fileToken != null) {
             val row1 = JSONArray().apply {
                 put(JSONObject().apply {
-                    put("text", "📥 Direct Download")
+                    put("text", "📥 Local Server Download")
                     put("url", "$baseHost/download/$fileToken")
                 })
                 put(JSONObject().apply {

@@ -5,6 +5,7 @@ import com.example.data.model.ServerStats
 import com.example.data.model.StreamFileItem
 import com.example.data.repository.StreamRepository
 import com.example.util.NetworkUtils
+import com.example.util.TelegramDns
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,12 +34,19 @@ import java.net.SocketException
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 class TeleStreamHttpServer(
     private val repository: StreamRepository,
-    private val okHttpClient: OkHttpClient = OkHttpClient()
+    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .dns(TelegramDns)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
 ) {
     private var serverSocket: ServerSocket? = null
     private var serverJob: Job? = null
@@ -146,9 +154,12 @@ class TeleStreamHttpServer(
         val clientIp = socket.inetAddress?.hostAddress ?: "unknown"
 
         try {
+            socket.tcpNoDelay = true
             socket.soTimeout = 30000
+            socket.sendBufferSize = 128 * 1024
+            socket.receiveBufferSize = 64 * 1024
             val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-            val output = BufferedOutputStream(socket.getOutputStream())
+            val output = BufferedOutputStream(socket.getOutputStream(), 64 * 1024)
 
             val requestLine = reader.readLine()
             if (requestLine.isNullOrBlank()) {
@@ -163,6 +174,7 @@ class TeleStreamHttpServer(
             }
 
             val method = parts[0].uppercase()
+            val isHead = method == "HEAD"
             val rawUri = parts[1]
             val path = rawUri.substringBefore("?")
 
@@ -193,13 +205,13 @@ class TeleStreamHttpServer(
                 // Stream Endpoint (video/audio inline streaming with range request support)
                 path.startsWith("/stream/") -> {
                     val fileId = path.removePrefix("/stream/").trim()
-                    handleStreamOrDownload(fileId, isDownload = false, headers = headers, output = output, clientIp = clientIp)
+                    handleStreamOrDownload(fileId, isDownload = false, headers = headers, isHead = isHead, output = output, clientIp = clientIp)
                 }
 
                 // Direct Download Endpoint (attachment header)
                 path.startsWith("/download/") -> {
                     val fileId = path.removePrefix("/download/").trim()
-                    handleStreamOrDownload(fileId, isDownload = true, headers = headers, output = output, clientIp = clientIp)
+                    handleStreamOrDownload(fileId, isDownload = true, headers = headers, isHead = isHead, output = output, clientIp = clientIp)
                 }
 
                 // API Status
@@ -283,6 +295,7 @@ class TeleStreamHttpServer(
         fileId: String,
         isDownload: Boolean,
         headers: Map<String, String>,
+        isHead: Boolean,
         output: OutputStream,
         clientIp: String
     ) {
@@ -292,16 +305,18 @@ class TeleStreamHttpServer(
             return
         }
 
-        // Increment stats
-        repository.incrementDownloadCount(file.id)
+        // Increment stats on full download/stream requests
+        if (!isHead) {
+            repository.incrementDownloadCount(file.id)
+        }
 
         val rangeHeader = headers["range"]
         val botConfig = repository.botConfig.value
 
         if (file.isLocalFile && file.localFilePath != null) {
-            streamLocalFile(file, rangeHeader, isDownload, output, clientIp)
+            streamLocalFile(file, rangeHeader, isDownload, isHead, output, clientIp)
         } else {
-            streamTelegramFile(file, botConfig.botToken, rangeHeader, isDownload, output, clientIp)
+            streamTelegramFile(file, botConfig.botToken, rangeHeader, isDownload, isHead, output, clientIp)
         }
     }
 
@@ -309,6 +324,7 @@ class TeleStreamHttpServer(
         file: StreamFileItem,
         rangeHeader: String?,
         isDownload: Boolean,
+        isHead: Boolean,
         output: OutputStream,
         clientIp: String
     ) {
@@ -359,6 +375,8 @@ class TeleStreamHttpServer(
         output.write(headerBuilder.toString().toByteArray())
         output.flush()
 
+        if (isHead) return
+
         repository.log(
             method = if (isDownload) "DOWNLOAD" else "STREAM",
             pathOrAction = file.fileName,
@@ -390,6 +408,7 @@ class TeleStreamHttpServer(
         botToken: String,
         rangeHeader: String?,
         isDownload: Boolean,
+        isHead: Boolean,
         output: OutputStream,
         clientIp: String
     ) {
@@ -477,6 +496,11 @@ class TeleStreamHttpServer(
 
         output.write(headerBuilder.toString().toByteArray())
         output.flush()
+
+        if (isHead) {
+            tgResponse.close()
+            return
+        }
 
         repository.log(
             method = if (isDownload) "DOWNLOAD" else "STREAM",

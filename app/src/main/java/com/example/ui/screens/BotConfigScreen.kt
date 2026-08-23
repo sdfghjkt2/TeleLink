@@ -261,18 +261,36 @@ fun BotConfigScreen(
                     OutlinedTextField(
                         value = customDomain,
                         onValueChange = { customDomain = it },
-                        label = { Text("Custom Domain / Tunnel URL (Optional)") },
+                        label = { Text("Custom Domain / Public Tunnel URL (Optional)") },
                         placeholder = { Text("https://my-app.loca.lt or https://xyz.ngrok.app") },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text(
-                        text = "Leave empty to use local network IP address (e.g. http://192.168.1.xxx:8080).",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "💡 Understanding Download Links & Reachability:",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "• 🚀 Global CDN Links: Sent automatically in Telegram. 100% reachable on any device worldwide with zero setup!\n• 📶 Mobile Data (5G/4G): Carrier NAT blocks external devices from reaching local IPs (10.x.x.x). Use a free tunnel (Ngrok, Cloudflare Tunnel) here if you want your local server accessible externally.\n• 🏠 Wi-Fi LAN: Reachable by any phone or PC on the same Wi-Fi network.",
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
