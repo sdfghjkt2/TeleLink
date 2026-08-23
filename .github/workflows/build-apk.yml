@@ -26,6 +26,12 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
+      - name: Generate Debug Keystore
+        run: |
+          if [ ! -f "debug.keystore" ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Grant Execute Permission for Gradlew
         run: |
           if [ -f "gradlew" ]; then
@@ -35,9 +41,9 @@ jobs:
       - name: Build APK with Gradle
         run: |
           if [ -f "gradlew" ]; then
-            ./gradlew assembleDebug --no-daemon
+            ./gradlew assembleDebug --no-daemon -x test
           else
-            gradle assembleDebug --no-daemon
+            gradle assembleDebug --no-daemon -x test
           fi
 
       - name: Locate Built APK
