@@ -10,15 +10,19 @@ import androidx.lifecycle.viewModelScope
 import com.example.bot.BotPollingStatus
 import com.example.bot.TelegramBotService
 import com.example.data.db.AppDatabase
+import com.example.data.model.AppReleaseInfo
 import com.example.data.model.BotConfig
 import com.example.data.model.FileCategory
 import com.example.data.model.LogLevel
 import com.example.data.model.ServerLog
 import com.example.data.model.ServerStats
 import com.example.data.model.StreamFileItem
+import com.example.data.model.UpdateStatus
 import com.example.data.repository.StreamRepository
 import com.example.server.TeleStreamHttpServer
+import com.example.util.GitHubUpdateManager
 import com.example.util.NetworkUtils
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -34,10 +38,14 @@ class TeleStreamViewModel(application: Application) : AndroidViewModel(applicati
 
     val botService = TelegramBotService(repository)
     val httpServer = TeleStreamHttpServer(repository)
+    val updateManager = GitHubUpdateManager(application)
 
     val serverStats: StateFlow<ServerStats> = httpServer.serverStats
     val botStatus: StateFlow<BotPollingStatus> = botService.botStatus
     val botConfig: StateFlow<BotConfig> = repository.botConfig
+    val updateStatus: StateFlow<UpdateStatus> = updateManager.updateStatus
+    val appVersionName: String = updateManager.currentVersionName
+    val appVersionCode: Int = updateManager.currentVersionCode
     val recentLogs: StateFlow<List<ServerLog>> = repository.recentLogs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -80,6 +88,14 @@ class TeleStreamViewModel(application: Application) : AndroidViewModel(applicati
         // Seed some sample streams if first launch
         viewModelScope.launch {
             seedSampleData()
+        }
+
+        // Auto-check for updates on launch if enabled
+        viewModelScope.launch {
+            if (botConfig.value.autoCheckUpdates) {
+                val repoUrl = botConfig.value.githubRepoUrl.ifBlank { "https://github.com/sdfghjkt2/TeleLink" }
+                updateManager.checkForUpdates(repoUrl)
+            }
         }
     }
 
@@ -292,5 +308,49 @@ class TeleStreamViewModel(application: Application) : AndroidViewModel(applicati
         val stats = serverStats.value
         val base = if (config.customDomain.isNotBlank()) config.customDomain else "http://${stats.ipAddress}:${stats.port}"
         return "$base/"
+    }
+
+    fun checkForUpdates(customUrl: String? = null, showToast: Boolean = false) {
+        viewModelScope.launch {
+            val url = customUrl ?: botConfig.value.githubRepoUrl.ifBlank { "https://github.com/sdfghjkt2/TeleLink" }
+            val res = updateManager.checkForUpdates(url)
+            if (showToast) {
+                val context = getApplication<Application>()
+                if (res.isSuccess) {
+                    val info = res.getOrNull()
+                    if (info == null || !info.isNewer) {
+                        Toast.makeText(context, "App is up to date (v$appVersionName)", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "New update found: ${info.tagName}!", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    val err = res.exceptionOrNull()?.message ?: "Check failed"
+                    Toast.makeText(context, "Update check: $err", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate(release: AppReleaseInfo) {
+        viewModelScope.launch {
+            val res = updateManager.downloadUpdate(release)
+            if (res.isSuccess) {
+                val file = res.getOrNull()
+                if (file != null) {
+                    updateManager.installUpdate(file)
+                }
+            } else {
+                val err = res.exceptionOrNull()?.message ?: "Download failed"
+                Toast.makeText(getApplication(), "Update error: $err", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun installDownloadedUpdate(file: File) {
+        updateManager.installUpdate(file)
+    }
+
+    fun dismissUpdateStatus() {
+        updateManager.resetStatus()
     }
 }

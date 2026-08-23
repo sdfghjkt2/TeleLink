@@ -1,0 +1,71 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant Execute Permission for Gradlew
+        run: |
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+          fi
+
+      - name: Build APK with Gradle
+        run: |
+          if [ -f "gradlew" ]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
+
+      - name: Locate Built APK
+        id: find_apk
+        run: |
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          echo "Found APK at: $APK_PATH"
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TeleLink-Debug-APK
+          path: ${{ steps.find_apk.outputs.apk_path }}
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          name: TeleLink Build ${{ github.ref_type == 'tag' && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          draft: false
+          prerelease: false
+          body: |
+            ## TeleLink Automated Build
+            - Commit: `${{ github.sha }}`
+            - Branch/Tag: `${{ github.ref_name }}`
+            - Automated APK compiled and verified for in-app auto updates.
+          files: ${{ steps.find_apk.outputs.apk_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

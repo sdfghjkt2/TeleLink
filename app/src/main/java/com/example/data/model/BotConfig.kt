@@ -10,7 +10,9 @@ data class BotConfig(
     val adminUserIds: String = "", // comma-separated telegram user IDs
     val autoDeleteAfterDays: Int = 0, // 0 = never
     val welcomeMessage: String = "👋 Hello! Send me any file, video, or audio and I will generate a high-speed direct browser download link and instant web streaming player for you!",
-    val isPublicBot: Boolean = true
+    val isPublicBot: Boolean = true,
+    val githubRepoUrl: String = "https://github.com/sdfghjkt2/TeleLink",
+    val autoCheckUpdates: Boolean = true
 )
 
 data class ServerStats(

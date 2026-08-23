@@ -51,5 +51,17 @@ class ExampleRobolectricTest {
     assertEquals(8080, stats.port)
     assertEquals(3, stats.activeConnections)
   }
+
+  @Test
+  fun `test version comparison logic`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val updater = com.example.util.GitHubUpdateManager(context)
+
+    assertEquals(true, updater.isVersionNewer("v1.1", "1.0"))
+    assertEquals(true, updater.isVersionNewer("v2.0.0", "1.9.9"))
+    assertEquals(true, updater.isVersionNewer("v1.0.1", "1.0.0"))
+    assertEquals(false, updater.isVersionNewer("v1.0", "1.0"))
+    assertEquals(false, updater.isVersionNewer("v1.0", "1.1"))
+  }
 }
 

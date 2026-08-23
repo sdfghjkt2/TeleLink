@@ -28,10 +28,12 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.bot.BotPollingStatus
 import com.example.data.model.StreamFileItem
+import com.example.data.model.UpdateStatus
 import com.example.ui.components.FileItemCard
 import com.example.ui.components.ServerStatusHero
 import com.example.ui.theme.CyberCyan
@@ -78,6 +81,7 @@ fun DashboardScreen(
     val botStatus by viewModel.botStatus.collectAsStateWithLifecycle()
     val botConfig by viewModel.botConfig.collectAsStateWithLifecycle()
     val recentFiles by viewModel.filteredFiles.collectAsStateWithLifecycle()
+    val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier
@@ -86,6 +90,82 @@ fun DashboardScreen(
         contentPadding = PaddingValues(top = 12.dp, bottom = 90.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // 0. Update Alert Banner (If available)
+        if (updateStatus is UpdateStatus.UpdateAvailable || updateStatus is UpdateStatus.ReadyToInstall) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = ServerEmerald.copy(alpha = 0.12f),
+                    border = CardDefaults.outlinedCardBorder().copy(
+                        brush = Brush.horizontalGradient(listOf(ServerEmerald, CyberCyan))
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("dashboard_update_banner")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(ServerEmerald.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.NewReleases,
+                                    contentDescription = null,
+                                    tint = ServerEmerald,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = if (updateStatus is UpdateStatus.UpdateAvailable) "New Update ${(updateStatus as UpdateStatus.UpdateAvailable).release.tagName} Available!" else "Update Downloaded & Ready!",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = ServerEmerald
+                                )
+                                Text(
+                                    text = "Sync & auto-update from GitHub repository",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                if (updateStatus is UpdateStatus.UpdateAvailable) {
+                                    viewModel.downloadAndInstallUpdate((updateStatus as UpdateStatus.UpdateAvailable).release)
+                                } else if (updateStatus is UpdateStatus.ReadyToInstall) {
+                                    viewModel.installDownloadedUpdate((updateStatus as UpdateStatus.ReadyToInstall).apkFile)
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = ServerEmerald)
+                        ) {
+                            Text(
+                                text = if (updateStatus is UpdateStatus.ReadyToInstall) "Install" else "Update",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // 1. Top Server Hero Card
         item {
             ServerStatusHero(

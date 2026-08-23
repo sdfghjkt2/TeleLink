@@ -15,8 +15,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Language
@@ -27,6 +29,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -49,9 +52,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.UpdateStatus
 import com.example.ui.components.CreateStreamDialog
 import com.example.ui.components.PlayerPreviewDialog
 import com.example.ui.components.QrCodeDialog
+import com.example.ui.components.UpdatePromptDialog
 import com.example.ui.screens.BotConfigScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.FilesScreen
@@ -73,11 +78,13 @@ enum class NavigationTab(val title: String) {
 fun TeleStreamApp(viewModel: TeleStreamViewModel) {
     var currentTab by remember { mutableIntStateOf(0) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
 
     val serverStats by viewModel.serverStats.collectAsStateWithLifecycle()
     val previewFile by viewModel.previewFile.collectAsStateWithLifecycle()
     val qrFile by viewModel.qrFile.collectAsStateWithLifecycle()
     val filesList by viewModel.filteredFiles.collectAsStateWithLifecycle()
+    val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -113,6 +120,35 @@ fun TeleStreamApp(viewModel: TeleStreamViewModel) {
                                     .size(8.dp)
                                     .clip(CircleShape)
                                     .background(ServerEmerald)
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            if (updateStatus is UpdateStatus.UpdateAvailable || updateStatus is UpdateStatus.Downloading || updateStatus is UpdateStatus.ReadyToInstall) {
+                                showUpdateDialog = true
+                            } else {
+                                currentTab = 2 // Go to Bot & Updates config tab
+                            }
+                        },
+                        modifier = Modifier.testTag("topbar_updater_btn")
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (updateStatus is UpdateStatus.UpdateAvailable || updateStatus is UpdateStatus.ReadyToInstall) {
+                                    Badge(containerColor = ServerEmerald) {
+                                        Text("NEW", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (updateStatus is UpdateStatus.UpdateAvailable) Icons.Default.NewReleases else Icons.Default.SystemUpdate,
+                                contentDescription = "Check for Updates",
+                                tint = if (updateStatus is UpdateStatus.UpdateAvailable) ServerEmerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
@@ -251,6 +287,20 @@ fun TeleStreamApp(viewModel: TeleStreamViewModel) {
                 playerUrl = viewModel.getPlayerUrl(file.id),
                 onDismiss = { viewModel.setQrFile(null) },
                 onCopyUrl = { viewModel.copyToClipboard(it) }
+            )
+        }
+
+        if (showUpdateDialog && (updateStatus is UpdateStatus.UpdateAvailable || updateStatus is UpdateStatus.Downloading || updateStatus is UpdateStatus.ReadyToInstall)) {
+            UpdatePromptDialog(
+                currentVersion = viewModel.appVersionName,
+                updateStatus = updateStatus,
+                onDismiss = { showUpdateDialog = false },
+                onDownloadAndInstall = { release ->
+                    viewModel.downloadAndInstallUpdate(release)
+                },
+                onInstallDownloadedApk = { apkFile ->
+                    viewModel.installDownloadedUpdate(apkFile)
+                }
             )
         }
     }

@@ -62,6 +62,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.components.AutoUpdateCard
 import com.example.ui.theme.ServerEmerald
 import com.example.ui.theme.TelegramBlue
 import com.example.ui.theme.TelegramLightBlue
@@ -76,6 +77,7 @@ fun BotConfigScreen(
     val currentConfig by viewModel.botConfig.collectAsStateWithLifecycle()
     val isTesting by viewModel.isTestingBot.collectAsStateWithLifecycle()
     val testMessage by viewModel.botTestMessage.collectAsStateWithLifecycle()
+    val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
 
     var token by remember(currentConfig.botToken) { mutableStateOf(currentConfig.botToken) }
     var showToken by remember { mutableStateOf(false) }
@@ -284,6 +286,27 @@ fun BotConfigScreen(
                     )
                 }
             }
+        }
+
+        // GitHub Repository Auto-Update Settings
+        item {
+            AutoUpdateCard(
+                currentVersion = viewModel.appVersionName,
+                updateStatus = updateStatus,
+                config = currentConfig,
+                onCheckForUpdates = { repoUrl ->
+                    viewModel.checkForUpdates(repoUrl, showToast = true)
+                },
+                onDownloadAndInstall = { release ->
+                    viewModel.downloadAndInstallUpdate(release)
+                },
+                onInstallDownloadedApk = { apkFile ->
+                    viewModel.installDownloadedUpdate(apkFile)
+                },
+                onSaveConfig = { newConfig ->
+                    viewModel.saveBotConfig(newConfig)
+                }
+            )
         }
 
         // Step-by-Step BotFather Guide

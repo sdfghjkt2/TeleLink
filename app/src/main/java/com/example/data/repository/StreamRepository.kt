@@ -38,7 +38,9 @@ class StreamRepository(
             adminUserIds = prefs.getString("admin_user_ids", "") ?: "",
             autoDeleteAfterDays = prefs.getInt("auto_delete_days", 0),
             welcomeMessage = prefs.getString("welcome_message", "👋 Hello! Send me any file, video, or audio to get high-speed browser download links and web stream player!") ?: "",
-            isPublicBot = prefs.getBoolean("is_public_bot", true)
+            isPublicBot = prefs.getBoolean("is_public_bot", true),
+            githubRepoUrl = prefs.getString("github_repo_url", "https://github.com/sdfghjkt2/TeleLink") ?: "https://github.com/sdfghjkt2/TeleLink",
+            autoCheckUpdates = prefs.getBoolean("auto_check_updates", true)
         )
     }
 
@@ -54,6 +56,8 @@ class StreamRepository(
             putInt("auto_delete_days", config.autoDeleteAfterDays)
             putString("welcome_message", config.welcomeMessage)
             putBoolean("is_public_bot", config.isPublicBot)
+            putString("github_repo_url", config.githubRepoUrl)
+            putBoolean("auto_check_updates", config.autoCheckUpdates)
             apply()
         }
         _botConfig.value = config
