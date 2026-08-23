@@ -208,53 +208,72 @@ class TelegramBotService(
             return
         }
 
-        // Check Media / Document
+        // Check Media / Document / File attachments
         val document = message.optJSONObject("document")
         val video = message.optJSONObject("video")
         val audio = message.optJSONObject("audio")
         val voice = message.optJSONObject("voice")
+        val videoNote = message.optJSONObject("video_note")
         val photoArray = message.optJSONArray("photo")
         val animation = message.optJSONObject("animation")
+        val sticker = message.optJSONObject("sticker")
 
         var tgFileId = ""
         var tgFileUniqueId = ""
-        var fileName = "file_${System.currentTimeMillis()}"
+        var fileName = ""
         var fileSize = 0L
         var mimeType = "application/octet-stream"
 
         when {
+            document != null -> {
+                tgFileId = document.optString("file_id")
+                tgFileUniqueId = document.optString("file_unique_id")
+                val origName = document.optString("file_name", "")
+                mimeType = document.optString("mime_type", "application/octet-stream")
+                fileName = if (origName.isNotBlank()) origName else "file_${tgFileUniqueId.ifEmpty { System.currentTimeMillis().toString() }}"
+                fileSize = document.optLong("file_size")
+            }
             video != null -> {
                 tgFileId = video.optString("file_id")
                 tgFileUniqueId = video.optString("file_unique_id")
-                fileName = video.optString("file_name", "video_${System.currentTimeMillis()}.mp4")
-                fileSize = video.optLong("file_size")
+                val origName = video.optString("file_name", "")
                 mimeType = video.optString("mime_type", "video/mp4")
+                fileName = if (origName.isNotBlank()) origName else "video_${tgFileUniqueId.ifEmpty { System.currentTimeMillis().toString() }}.mp4"
+                fileSize = video.optLong("file_size")
             }
             audio != null -> {
                 tgFileId = audio.optString("file_id")
                 tgFileUniqueId = audio.optString("file_unique_id")
-                fileName = audio.optString("file_name", "audio_${System.currentTimeMillis()}.mp3")
-                fileSize = audio.optLong("file_size")
+                val origName = audio.optString("file_name", "")
+                val performer = audio.optString("performer", "")
+                val title = audio.optString("title", "")
                 mimeType = audio.optString("mime_type", "audio/mpeg")
+                fileName = when {
+                    origName.isNotBlank() -> origName
+                    title.isNotBlank() -> if (performer.isNotBlank()) "$performer - $title.mp3" else "$title.mp3"
+                    else -> "audio_${tgFileUniqueId.ifEmpty { System.currentTimeMillis().toString() }}.mp3"
+                }
+                fileSize = audio.optLong("file_size")
             }
             voice != null -> {
                 tgFileId = voice.optString("file_id")
                 tgFileUniqueId = voice.optString("file_unique_id")
-                fileName = "voice_${System.currentTimeMillis()}.ogg"
+                fileName = "voice_${tgFileUniqueId.ifEmpty { System.currentTimeMillis().toString() }}.ogg"
                 fileSize = voice.optLong("file_size")
                 mimeType = voice.optString("mime_type", "audio/ogg")
             }
-            document != null -> {
-                tgFileId = document.optString("file_id")
-                tgFileUniqueId = document.optString("file_unique_id")
-                fileName = document.optString("file_name", "doc_${System.currentTimeMillis()}")
-                fileSize = document.optLong("file_size")
-                mimeType = document.optString("mime_type", "application/octet-stream")
+            videoNote != null -> {
+                tgFileId = videoNote.optString("file_id")
+                tgFileUniqueId = videoNote.optString("file_unique_id")
+                fileName = "round_video_${tgFileUniqueId.ifEmpty { System.currentTimeMillis().toString() }}.mp4"
+                fileSize = videoNote.optLong("file_size")
+                mimeType = "video/mp4"
             }
             animation != null -> {
                 tgFileId = animation.optString("file_id")
                 tgFileUniqueId = animation.optString("file_unique_id")
-                fileName = animation.optString("file_name", "animation_${System.currentTimeMillis()}.mp4")
+                val origName = animation.optString("file_name", "")
+                fileName = if (origName.isNotBlank()) origName else "animation_${tgFileUniqueId.ifEmpty { System.currentTimeMillis().toString() }}.mp4"
                 fileSize = animation.optLong("file_size")
                 mimeType = animation.optString("mime_type", "video/mp4")
             }
@@ -262,9 +281,27 @@ class TelegramBotService(
                 val largestPhoto = photoArray.getJSONObject(photoArray.length() - 1)
                 tgFileId = largestPhoto.optString("file_id")
                 tgFileUniqueId = largestPhoto.optString("file_unique_id")
-                fileName = "photo_${System.currentTimeMillis()}.jpg"
+                fileName = "photo_${tgFileUniqueId.ifEmpty { System.currentTimeMillis().toString() }}.jpg"
                 fileSize = largestPhoto.optLong("file_size")
                 mimeType = "image/jpeg"
+            }
+            sticker != null -> {
+                tgFileId = sticker.optString("file_id")
+                tgFileUniqueId = sticker.optString("file_unique_id")
+                val isAnimated = sticker.optBoolean("is_animated")
+                val isVideo = sticker.optBoolean("is_video")
+                val ext = when {
+                    isAnimated -> "tgs"
+                    isVideo -> "webm"
+                    else -> "webp"
+                }
+                fileName = "sticker_${tgFileUniqueId.ifEmpty { System.currentTimeMillis().toString() }}.$ext"
+                fileSize = sticker.optLong("file_size")
+                mimeType = when {
+                    isAnimated -> "application/x-tgsticker"
+                    isVideo -> "video/webm"
+                    else -> "image/webp"
+                }
             }
         }
 
@@ -288,25 +325,40 @@ class TelegramBotService(
 
             repository.insertFile(streamItem)
 
-            val baseHost = if (config.customDomain.isNotBlank()) config.customDomain else "http://$hostIp:$port"
+            val baseHost = if (config.customDomain.isNotBlank()) {
+                config.customDomain.trimEnd('/')
+            } else {
+                "http://$hostIp:$port"
+            }
             val downloadUrl = "$baseHost/download/$fileToken"
             val streamUrl = "$baseHost/stream/$fileToken"
             val playerUrl = "$baseHost/player/$fileToken"
 
-            val formattedSize = NetworkUtils.formatBytes(fileSize)
+            val formattedSize = if (fileSize > 0) NetworkUtils.formatBytes(fileSize) else "Streamable"
+
+            val categoryEmoji = when (category) {
+                FileCategory.VIDEO -> "🎬"
+                FileCategory.AUDIO -> "🎵"
+                FileCategory.IMAGE -> "🖼️"
+                FileCategory.ARCHIVE -> "📦"
+                FileCategory.DOCUMENT -> "📄"
+                FileCategory.OTHER -> "📁"
+            }
 
             val replyText = """
-                🎉 <b>File Ready to Stream & Download!</b>
+                ⚡ <b>File Converted to Browser Download Link!</b> $categoryEmoji
                 
-                📄 <b>Name:</b> <code>$fileName</code>
-                📦 <b>Size:</b> $formattedSize
+                📄 <b>File Name:</b> <code>$fileName</code>
+                📦 <b>Size:</b> <b>$formattedSize</b>
                 🏷️ <b>Type:</b> <code>$mimeType</code>
                 
-                ⚡ <b>Direct Download Link:</b>
+                📥 <b>Direct Browser Download:</b>
                 <code>$downloadUrl</code>
                 
-                🎬 <b>Online Web Player:</b>
+                🎬 <b>Stream / Online Player:</b>
                 <code>$playerUrl</code>
+                
+                <i>💡 Tap the buttons below or copy the link to download directly in Chrome, Safari, IDM, ADM, or VLC!</i>
             """.trimIndent()
 
             val keyboard = createKeyboard(hostIp, port, fileToken)
@@ -314,8 +366,8 @@ class TelegramBotService(
 
             repository.log(
                 method = "BOT",
-                pathOrAction = "CONVERT",
-                message = "Converted '$fileName' ($formattedSize) for $senderName",
+                pathOrAction = "CONVERT_LINK",
+                message = "Converted '$fileName' ($formattedSize) to download link for $senderName",
                 level = LogLevel.SUCCESS
             )
         }

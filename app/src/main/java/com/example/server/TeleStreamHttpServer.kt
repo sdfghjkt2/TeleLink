@@ -412,15 +412,31 @@ class TeleStreamHttpServer(
             return
         }
 
-        val tgFileUrl = "https://api.telegram.org/file/bot$botToken/$filePath"
-
-        val reqBuilder = Request.Builder().url(tgFileUrl)
+        var tgFileUrl = "https://api.telegram.org/file/bot$botToken/$filePath"
+        var reqBuilder = Request.Builder().url(tgFileUrl)
         if (!rangeHeader.isNullOrBlank()) {
             reqBuilder.header("Range", rangeHeader)
         }
 
-        val okHttpCall = okHttpClient.newCall(reqBuilder.build())
-        val tgResponse = withContext(Dispatchers.IO) { okHttpCall.execute() }
+        var okHttpCall = okHttpClient.newCall(reqBuilder.build())
+        var tgResponse = withContext(Dispatchers.IO) { okHttpCall.execute() }
+
+        // If path expired, retry fetching a fresh path from Telegram API once
+        if (tgResponse.code == 404 || tgResponse.code == 403 || tgResponse.code == 400) {
+            tgResponse.close()
+            telegramFilePathCache.remove(file.telegramFileId)
+            val freshPath = fetchTelegramFilePath(botToken, file.telegramFileId)
+            if (freshPath != null) {
+                telegramFilePathCache[file.telegramFileId] = freshPath
+                tgFileUrl = "https://api.telegram.org/file/bot$botToken/$freshPath"
+                reqBuilder = Request.Builder().url(tgFileUrl)
+                if (!rangeHeader.isNullOrBlank()) {
+                    reqBuilder.header("Range", rangeHeader)
+                }
+                okHttpCall = okHttpClient.newCall(reqBuilder.build())
+                tgResponse = withContext(Dispatchers.IO) { okHttpCall.execute() }
+            }
+        }
 
         if (!tgResponse.isSuccessful && tgResponse.code != 206) {
             sendError(output, tgResponse.code, "Telegram File API returned ${tgResponse.code}")
