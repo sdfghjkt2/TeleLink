@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.OpenInNew
@@ -45,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -81,8 +84,12 @@ fun BotConfigScreen(
 
     var token by remember(currentConfig.botToken) { mutableStateOf(currentConfig.botToken) }
     var showToken by remember { mutableStateOf(false) }
+    var apiId by remember(currentConfig.telegramApiId) { mutableStateOf(currentConfig.telegramApiId) }
+    var apiHash by remember(currentConfig.telegramApiHash) { mutableStateOf(currentConfig.telegramApiHash) }
+    var showApiHash by remember { mutableStateOf(false) }
     var portStr by remember(currentConfig.serverPort) { mutableStateOf(currentConfig.serverPort.toString()) }
     var customDomain by remember(currentConfig.customDomain) { mutableStateOf(currentConfig.customDomain) }
+    var customBotApiUrl by remember(currentConfig.customBotApiUrl) { mutableStateOf(currentConfig.customBotApiUrl) }
     var welcomeMsg by remember(currentConfig.welcomeMessage) { mutableStateOf(currentConfig.welcomeMessage) }
 
     LazyColumn(
@@ -226,6 +233,159 @@ fun BotConfigScreen(
             }
         }
 
+        // Telegram API ID & Hash Card (for 2GB files)
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.outlinedCardBorder()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "⚡ 2GB Direct Telegram API (my.telegram.org)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://my.telegram.org"))
+                                context.startActivity(intent)
+                            }
+                        ) {
+                            Icon(imageVector = Icons.Default.OpenInNew, contentDescription = "Open my.telegram.org", tint = TelegramBlue)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Allows bypassing Telegram's 20MB cloud limit for files up to 2GB (2,000MB) without external servers.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // API ID Field
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "App api_id",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = clipboard.primaryClip
+                                if (clip != null && clip.itemCount > 0) {
+                                    val pasted = clip.getItemAt(0).text?.toString() ?: ""
+                                    if (pasted.isNotBlank()) apiId = pasted.trim()
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Paste ID", fontSize = 12.sp)
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = apiId,
+                        onValueChange = { apiId = it },
+                        placeholder = { Text("e.g. 12345678 (numbers only)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // API Hash Field
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "App api_hash",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = clipboard.primaryClip
+                                if (clip != null && clip.itemCount > 0) {
+                                    val pasted = clip.getItemAt(0).text?.toString() ?: ""
+                                    if (pasted.isNotBlank()) apiHash = pasted.trim()
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Paste Hash", fontSize = 12.sp)
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = apiHash,
+                        onValueChange = { apiHash = it },
+                        placeholder = { Text("e.g. 0123456789abcdef0123456789abcdef") },
+                        visualTransformation = if (showApiHash) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showApiHash = !showApiHash }) {
+                                Icon(
+                                    imageVector = if (showApiHash) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (showApiHash) "Hide" else "Show"
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (apiId.isNotBlank() && apiHash.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF2E7D32),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Direct MTProto API credentials ready for 2GB file operations",
+                                fontSize = 12.sp,
+                                color = Color(0xFF2E7D32),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Server Port & Tunnel Config
         item {
             Card(
@@ -267,6 +427,18 @@ fun BotConfigScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = customBotApiUrl,
+                        onValueChange = { customBotApiUrl = it },
+                        label = { Text("Custom Telegram Bot API Server URL (Optional)") },
+                        placeholder = { Text("Leave empty for https://api.telegram.org (20MB limit)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -284,7 +456,7 @@ fun BotConfigScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "• 🚀 Global CDN Links: Sent automatically in Telegram. 100% reachable on any device worldwide with zero setup!\n• 📶 Mobile Data (5G/4G): Carrier NAT blocks external devices from reaching local IPs (10.x.x.x). Use a free tunnel (Ngrok, Cloudflare Tunnel) here if you want your local server accessible externally.\n• 🏠 Wi-Fi LAN: Reachable by any phone or PC on the same Wi-Fi network.",
+                                text = "• 🚀 Global CDN Links: Sent automatically in Telegram. 100% reachable on any device worldwide with zero setup!\n• 📶 Mobile Data (5G/4G): Carrier NAT blocks external devices from reaching local IPs (10.x.x.x). Use a free tunnel (Ngrok, Cloudflare Tunnel) here if you want your local server accessible externally.\n• 📦 2GB File Limit: Official Telegram Bot API limits bot downloads to 20MB. For files up to 2GB, point 'Custom Bot API Server URL' to a local bot-api server or use local files.",
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -390,8 +562,11 @@ fun BotConfigScreen(
                     viewModel.saveBotConfig(
                         currentConfig.copy(
                             botToken = token.trim(),
+                            telegramApiId = apiId.trim(),
+                            telegramApiHash = apiHash.trim(),
                             serverPort = port,
                             customDomain = customDomain.trim(),
+                            customBotApiUrl = customBotApiUrl.trim(),
                             welcomeMessage = welcomeMsg.trim()
                         )
                     )

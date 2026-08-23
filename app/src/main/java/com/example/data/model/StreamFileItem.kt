@@ -17,6 +17,7 @@ data class StreamFileItem(
     @PrimaryKey val id: String, // Unique token e.g. "tg_982749283"
     val telegramFileId: String,
     val telegramFileUniqueId: String = "",
+    val telegramFilePath: String? = null,
     val fileName: String,
     val fileSize: Long,
     val mimeType: String,

@@ -32,9 +32,12 @@ class StreamRepository(
             botToken = prefs.getString("bot_token", "") ?: "",
             botUsername = prefs.getString("bot_username", "") ?: "",
             botName = prefs.getString("bot_name", "") ?: "",
+            telegramApiId = prefs.getString("telegram_api_id", "") ?: "",
+            telegramApiHash = prefs.getString("telegram_api_hash", "") ?: "",
             isBotActive = prefs.getBoolean("is_bot_active", false),
             serverPort = prefs.getInt("server_port", 8080),
             customDomain = prefs.getString("custom_domain", "") ?: "",
+            customBotApiUrl = prefs.getString("custom_bot_api_url", "") ?: "",
             adminUserIds = prefs.getString("admin_user_ids", "") ?: "",
             autoDeleteAfterDays = prefs.getInt("auto_delete_days", 0),
             welcomeMessage = prefs.getString("welcome_message", "👋 Hello! Send me any file, video, or audio to get high-speed browser download links and web stream player!") ?: "",
@@ -49,9 +52,12 @@ class StreamRepository(
             putString("bot_token", config.botToken)
             putString("bot_username", config.botUsername)
             putString("bot_name", config.botName)
+            putString("telegram_api_id", config.telegramApiId)
+            putString("telegram_api_hash", config.telegramApiHash)
             putBoolean("is_bot_active", config.isBotActive)
             putInt("server_port", config.serverPort)
             putString("custom_domain", config.customDomain)
+            putString("custom_bot_api_url", config.customBotApiUrl)
             putString("admin_user_ids", config.adminUserIds)
             putInt("auto_delete_days", config.autoDeleteAfterDays)
             putString("welcome_message", config.welcomeMessage)

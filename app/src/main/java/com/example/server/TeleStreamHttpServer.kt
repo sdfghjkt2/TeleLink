@@ -414,26 +414,61 @@ class TeleStreamHttpServer(
         output: OutputStream,
         clientIp: String
     ) {
-        if (botToken.isBlank()) {
-            sendError(output, 500, "Telegram Bot Token is not configured in TeleStream App.")
+        val cleanToken = botToken.trim()
+        if (cleanToken.isBlank()) {
+            sendStyledError(
+                output = output,
+                code = 500,
+                title = "Bot Token Not Configured",
+                message = "The Telegram Bot Token is missing in TeleStream settings.",
+                suggestion = "Open TeleStream App -> Go to 'Bot Setup' -> Enter your Telegram Bot Token and save.",
+                file = file
+            )
             return
         }
 
-        // Get file path from Telegram API if not cached
-        var filePath = telegramFilePathCache[file.telegramFileId]
-        if (filePath == null) {
-            filePath = fetchTelegramFilePath(botToken, file.telegramFileId)
-            if (filePath != null) {
+        val customApiUrl = repository.botConfig.value.customBotApiUrl
+        val baseApi = if (customApiUrl.isNotBlank()) customApiUrl.trimEnd('/') else "https://api.telegram.org"
+
+        // 1. Get file path from file entity or cache or query Telegram API
+        var filePath = file.telegramFilePath ?: telegramFilePathCache[file.telegramFileId]
+        var fetchErrorReason: String? = null
+
+        if (filePath.isNullOrBlank()) {
+            val result = fetchTelegramFilePathDetailed(cleanToken, file.telegramFileId, baseApi)
+            filePath = result.getOrNull()
+            if (!filePath.isNullOrBlank()) {
                 telegramFilePathCache[file.telegramFileId] = filePath
+            } else {
+                fetchErrorReason = result.exceptionOrNull()?.message ?: "Unknown Telegram API error"
             }
         }
 
-        if (filePath == null) {
-            sendError(output, 502, "Could not resolve file path from Telegram servers.")
+        if (filePath.isNullOrBlank()) {
+            val isTooBig = file.fileSize > 20 * 1024 * 1024
+            val errorDescription = when {
+                isTooBig -> "Telegram Cloud Bot API restricts direct bot downloads to files under 20MB (${NetworkUtils.formatBytes(file.fileSize)} file detected)."
+                !fetchErrorReason.isNullOrBlank() -> fetchErrorReason
+                else -> "Could not resolve file path from Telegram servers."
+            }
+
+            val suggestion = when {
+                isTooBig -> "To stream or download files over 20MB (up to 2,000MB / 2GB), configure a Local Telegram Bot API Server in 'Bot Setup' settings or use files under 20MB."
+                else -> "Ensure your Telegram bot is active and you have internet access. You can also re-send the file in Telegram to generate a fresh link."
+            }
+
+            sendStyledError(
+                output = output,
+                code = 502,
+                title = if (isTooBig) "Telegram 20MB File Limit" else "File Path Resolution Failed",
+                message = errorDescription,
+                suggestion = suggestion,
+                file = file
+            )
             return
         }
 
-        var tgFileUrl = "https://api.telegram.org/file/bot$botToken/$filePath"
+        var tgFileUrl = "$baseApi/file/bot$cleanToken/$filePath"
         var reqBuilder = Request.Builder().url(tgFileUrl)
         if (!rangeHeader.isNullOrBlank()) {
             reqBuilder.header("Range", rangeHeader)
@@ -446,10 +481,11 @@ class TeleStreamHttpServer(
         if (tgResponse.code == 404 || tgResponse.code == 403 || tgResponse.code == 400) {
             tgResponse.close()
             telegramFilePathCache.remove(file.telegramFileId)
-            val freshPath = fetchTelegramFilePath(botToken, file.telegramFileId)
-            if (freshPath != null) {
+            val freshResult = fetchTelegramFilePathDetailed(cleanToken, file.telegramFileId, baseApi)
+            val freshPath = freshResult.getOrNull()
+            if (!freshPath.isNullOrBlank()) {
                 telegramFilePathCache[file.telegramFileId] = freshPath
-                tgFileUrl = "https://api.telegram.org/file/bot$botToken/$freshPath"
+                tgFileUrl = "$baseApi/file/bot$cleanToken/$freshPath"
                 reqBuilder = Request.Builder().url(tgFileUrl)
                 if (!rangeHeader.isNullOrBlank()) {
                     reqBuilder.header("Range", rangeHeader)
@@ -460,7 +496,14 @@ class TeleStreamHttpServer(
         }
 
         if (!tgResponse.isSuccessful && tgResponse.code != 206) {
-            sendError(output, tgResponse.code, "Telegram File API returned ${tgResponse.code}")
+            sendStyledError(
+                output = output,
+                code = tgResponse.code,
+                title = "Telegram CDN Error (${tgResponse.code})",
+                message = "Telegram download servers returned HTTP ${tgResponse.code}: ${tgResponse.message}",
+                suggestion = "The file link may have expired or Telegram servers are temporarily unavailable.",
+                file = file
+            )
             tgResponse.close()
             return
         }
@@ -526,22 +569,34 @@ class TeleStreamHttpServer(
         tgResponse.close()
     }
 
-    private suspend fun fetchTelegramFilePath(botToken: String, fileId: String): String? {
+    private suspend fun fetchTelegramFilePathDetailed(
+        botToken: String,
+        fileId: String,
+        baseApi: String = "https://api.telegram.org"
+    ): Result<String> {
         return withContext(Dispatchers.IO) {
             try {
-                val url = "https://api.telegram.org/bot$botToken/getFile?file_id=$fileId"
+                val cleanToken = botToken.trim()
+                val url = "$baseApi/bot$cleanToken/getFile?file_id=$fileId"
                 val req = Request.Builder().url(url).build()
                 okHttpClient.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) {
-                        val bodyStr = resp.body?.string() ?: return@withContext null
-                        val json = JSONObject(bodyStr)
-                        if (json.optBoolean("ok")) {
-                            return@withContext json.getJSONObject("result").optString("file_path")
+                    val bodyStr = resp.body?.string() ?: return@withContext Result.failure(Exception("Empty response body from Telegram"))
+                    val json = JSONObject(bodyStr)
+                    if (json.optBoolean("ok")) {
+                        val path = json.getJSONObject("result").optString("file_path")
+                        if (path.isNotBlank()) {
+                            return@withContext Result.success(path)
+                        } else {
+                            return@withContext Result.failure(Exception("file_path missing in Telegram response"))
                         }
+                    } else {
+                        val desc = json.optString("description", "Unknown Telegram API error")
+                        return@withContext Result.failure(Exception(desc))
                     }
                 }
-            } catch (_: Exception) {}
-            null
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
         }
     }
 
@@ -604,24 +659,111 @@ class TeleStreamHttpServer(
     }
 
     private fun sendNotFound(output: OutputStream) {
-        val body = "<h1>404 Not Found</h1><p>TeleStream file or resource not found.</p>"
-        val bytes = body.toByteArray(Charsets.UTF_8)
-        val header = "HTTP/1.1 404 Not Found\r\n" +
-                "Content-Type: text/html\r\n" +
-                "Content-Length: ${bytes.size}\r\n" +
-                "Connection: close\r\n\r\n"
-        output.write(header.toByteArray())
-        output.write(bytes)
-        output.flush()
+        sendStyledError(
+            output = output,
+            code = 404,
+            title = "File Not Found",
+            message = "The requested file or resource could not be found on this TeleStream server.",
+            suggestion = "Check that the download token in the URL is correct, or resend the file in Telegram.",
+            file = null
+        )
     }
 
     private fun sendError(output: OutputStream, code: Int, message: String) {
-        val body = "<h1>$code Error</h1><p>$message</p>"
-        val bytes = body.toByteArray(Charsets.UTF_8)
-        val header = "HTTP/1.1 $code Error\r\n" +
-                "Content-Type: text/html\r\n" +
+        sendStyledError(
+            output = output,
+            code = code,
+            title = "$code Server Error",
+            message = message,
+            suggestion = "Please check your server and bot configuration in the TeleStream Android App.",
+            file = null
+        )
+    }
+
+    private fun sendStyledError(
+        output: OutputStream,
+        code: Int,
+        title: String,
+        message: String,
+        suggestion: String,
+        file: StreamFileItem? = null
+    ) {
+        val fileInfoHtml = if (file != null) {
+            """
+            <div class="file-card">
+                <div class="file-icon">📄</div>
+                <div class="file-meta">
+                    <div class="file-name">${file.fileName}</div>
+                    <div class="file-size">Size: ${NetworkUtils.formatBytes(file.fileSize)} • Type: ${file.mimeType}</div>
+                </div>
+            </div>
+            """.trimIndent()
+        } else ""
+
+        val html = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>$code - $title | TeleStream</title>
+            <style>
+                :root {
+                    --bg: #0d1117;
+                    --surface: #161b22;
+                    --border: #30363d;
+                    --primary: #388bfd;
+                    --error: #f85149;
+                    --text: #f0f6fc;
+                    --text-secondary: #8b949e;
+                    --warning: #e3b341;
+                }
+                * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                body { background: var(--bg); color: var(--text); display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+                .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; max-width: 540px; width: 100%; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+                .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(248, 81, 73, 0.15); color: var(--error); padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 14px; margin-bottom: 20px; border: 1px solid rgba(248, 81, 73, 0.3); }
+                h1 { font-size: 24px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
+                p.desc { font-size: 15px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 20px; }
+                .file-card { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 14px; text-align: left; margin-bottom: 20px; }
+                .file-icon { font-size: 28px; }
+                .file-name { font-weight: 600; font-size: 14px; color: var(--text); word-break: break-all; }
+                .file-size { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+                .suggestion-box { background: rgba(227, 179, 65, 0.1); border: 1px solid rgba(227, 179, 65, 0.25); border-radius: 12px; padding: 14px 16px; text-align: left; margin-bottom: 24px; font-size: 13px; color: var(--warning); line-height: 1.5; }
+                .btn-group { display: flex; flex-direction: column; gap: 10px; }
+                .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; border-radius: 10px; font-weight: 600; font-size: 14px; text-decoration: none; transition: all 0.2s; cursor: pointer; border: none; }
+                .btn-primary { background: var(--primary); color: #fff; }
+                .btn-primary:hover { background: #2f74d0; }
+                .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+                .btn-outline:hover { background: rgba(255,255,255,0.05); }
+                .footer { margin-top: 24px; font-size: 12px; color: var(--text-secondary); }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="badge">⚠️ HTTP $code</div>
+                <h1>$title</h1>
+                <p class="desc">$message</p>
+                $fileInfoHtml
+                <div class="suggestion-box">
+                    <strong>💡 Solution:</strong> $suggestion
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="window.location.reload()">🔄 Retry Download</button>
+                    <a href="/" class="btn btn-outline">🏠 Return to TeleStream Web Portal</a>
+                </div>
+                <div class="footer">TeleStream Fast Web Streaming Server</div>
+            </div>
+        </body>
+        </html>
+        """.trimIndent()
+
+        val bytes = html.toByteArray(Charsets.UTF_8)
+        val header = "HTTP/1.1 $code $title\r\n" +
+                "Content-Type: text/html; charset=UTF-8\r\n" +
                 "Content-Length: ${bytes.size}\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
                 "Connection: close\r\n\r\n"
+
         output.write(header.toByteArray())
         output.write(bytes)
         output.flush()

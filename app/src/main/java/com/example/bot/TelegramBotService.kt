@@ -313,10 +313,16 @@ class TelegramBotService(
             val fileToken = "ts_" + UUID.randomUUID().toString().replace("-", "").take(10)
             val category = NetworkUtils.detectCategory(fileName, mimeType)
 
+            // Resolve direct Telegram Cloud CDN path for instant worldwide reachability
+            val customApiUrl = config.customBotApiUrl
+            val baseApi = if (customApiUrl.isNotBlank()) customApiUrl.trimEnd('/') else "https://api.telegram.org"
+            val tgFilePath = fetchTelegramFilePath(token, tgFileId, baseApi)
+            
             val streamItem = StreamFileItem(
                 id = fileToken,
                 telegramFileId = tgFileId,
                 telegramFileUniqueId = tgFileUniqueId,
+                telegramFilePath = tgFilePath,
                 fileName = fileName,
                 fileSize = fileSize,
                 mimeType = mimeType,
@@ -329,10 +335,8 @@ class TelegramBotService(
 
             repository.insertFile(streamItem)
 
-            // Resolve direct Telegram Cloud CDN path for instant worldwide reachability
-            val tgFilePath = fetchTelegramFilePath(token, tgFileId)
             val globalCdnUrl = if (tgFilePath != null) {
-                "https://api.telegram.org/file/bot$token/$tgFilePath"
+                "$baseApi/file/bot$token/$tgFilePath"
             } else null
 
             val baseHost = if (config.customDomain.isNotBlank()) {
@@ -374,7 +378,13 @@ class TelegramBotService(
                 appendLine("🎬 <b>Online Web Stream Player:</b>")
                 appendLine("<code>$playerUrl</code>")
                 appendLine()
-                append("<i>💡 Works directly with Chrome, Safari, IDM, 1DM, ADM, curl & VLC!</i>")
+
+                if (fileSize > 20 * 1024 * 1024 && globalCdnUrl == null) {
+                    appendLine("⚠️ <b>Note on Telegram 20MB limit:</b> Telegram restricts direct Bot API downloads to 20MB on the public cloud. For files up to 2GB, you can connect a local Bot API server in app settings.")
+                    appendLine()
+                }
+
+                append("<i>💡 Works directly with Chrome, Brave, Safari, IDM, 1DM, ADM, curl & VLC!</i>")
             }
 
             val keyboard = createKeyboard(hostIp, port, fileToken, globalCdnUrl)
@@ -389,21 +399,35 @@ class TelegramBotService(
         }
     }
 
-    private suspend fun fetchTelegramFilePath(botToken: String, fileId: String): String? {
+    private suspend fun fetchTelegramFilePath(botToken: String, fileId: String, baseApi: String = "https://api.telegram.org"): String? {
+        val cleanToken = botToken.trim()
         return withContext(Dispatchers.IO) {
             try {
-                val url = "https://api.telegram.org/bot$botToken/getFile?file_id=$fileId"
+                val url = "$baseApi/bot$cleanToken/getFile?file_id=$fileId"
                 val req = Request.Builder().url(url).build()
                 okHttpClient.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) {
-                        val bodyStr = resp.body?.string() ?: return@withContext null
-                        val json = JSONObject(bodyStr)
-                        if (json.optBoolean("ok")) {
-                            return@withContext json.getJSONObject("result").optString("file_path")
-                        }
+                    val bodyStr = resp.body?.string() ?: return@withContext null
+                    val json = JSONObject(bodyStr)
+                    if (json.optBoolean("ok")) {
+                        return@withContext json.getJSONObject("result").optString("file_path")
+                    } else {
+                        val desc = json.optString("description", "Unknown error")
+                        repository.log(
+                            method = "BOT",
+                            pathOrAction = "GET_FILE",
+                            message = "Telegram getFile API: $desc",
+                            level = LogLevel.WARN
+                        )
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                repository.log(
+                    method = "BOT",
+                    pathOrAction = "GET_FILE",
+                    message = "Telegram getFile connection error: ${e.message}",
+                    level = LogLevel.WARN
+                )
+            }
             null
         }
     }
