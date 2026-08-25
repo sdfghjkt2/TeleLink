@@ -13,15 +13,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.RocketLaunch
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.Badge
@@ -60,6 +64,8 @@ import com.example.ui.components.UpdatePromptDialog
 import com.example.ui.screens.BotConfigScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.FilesScreen
+import com.example.ui.screens.MtprotoServerScreen
+import com.example.ui.screens.TerminalScreen
 import com.example.ui.screens.WebPortalAndLogsScreen
 import com.example.ui.theme.ServerEmerald
 import com.example.ui.theme.TelegramBlue
@@ -69,7 +75,9 @@ import com.example.ui.viewmodel.TeleStreamViewModel
 enum class NavigationTab(val title: String) {
     DASHBOARD("Dashboard"),
     FILES("Streams"),
+    MTPROTO("MTProto"),
     BOT_SETUP("Bot Setup"),
+    TERMINAL("Terminal"),
     LOGS("Logs & Web")
 }
 
@@ -201,31 +209,70 @@ fun TeleStreamApp(viewModel: TeleStreamViewModel) {
                     modifier = Modifier.testTag("tab_files")
                 )
 
-                // Tab 2: Bot Setup
+                // Tab 2: MTProto Server
                 NavigationBarItem(
                     selected = currentTab == 2,
                     onClick = { currentTab = 2 },
                     icon = {
-                        Icon(
-                            imageVector = if (currentTab == 2) Icons.Default.SmartToy else Icons.Outlined.SmartToy,
-                            contentDescription = "Bot Setup"
-                        )
+                        val isRunning = viewModel.mtprotoStats.collectAsStateWithLifecycle().value.isRunning
+                        BadgedBox(
+                            badge = {
+                                if (isRunning) {
+                                    Badge(containerColor = ServerEmerald) {
+                                        Text("ON", fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (currentTab == 2) Icons.Default.RocketLaunch else Icons.Outlined.RocketLaunch,
+                                contentDescription = "MTProto Server"
+                            )
+                        }
                     },
-                    label = { Text("Bot Setup", fontSize = 11.sp, fontWeight = if (currentTab == 2) FontWeight.Bold else FontWeight.Normal) },
-                    modifier = Modifier.testTag("tab_bot_setup")
+                    label = { Text("MTProto", fontSize = 11.sp, fontWeight = if (currentTab == 2) FontWeight.Bold else FontWeight.Normal) },
+                    modifier = Modifier.testTag("tab_mtproto")
                 )
 
-                // Tab 3: Logs & Web
+                // Tab 3: Bot Setup
                 NavigationBarItem(
                     selected = currentTab == 3,
                     onClick = { currentTab = 3 },
                     icon = {
                         Icon(
-                            imageVector = if (currentTab == 3) Icons.Default.Language else Icons.Outlined.Language,
+                            imageVector = if (currentTab == 3) Icons.Default.SmartToy else Icons.Outlined.SmartToy,
+                            contentDescription = "Bot Setup"
+                        )
+                    },
+                    label = { Text("Bot Setup", fontSize = 11.sp, fontWeight = if (currentTab == 3) FontWeight.Bold else FontWeight.Normal) },
+                    modifier = Modifier.testTag("tab_bot_setup")
+                )
+
+                // Tab 4: Terminal
+                NavigationBarItem(
+                    selected = currentTab == 4,
+                    onClick = { currentTab = 4 },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Terminal,
+                            contentDescription = "Terminal"
+                        )
+                    },
+                    label = { Text("Terminal", fontSize = 11.sp, fontWeight = if (currentTab == 4) FontWeight.Bold else FontWeight.Normal) },
+                    modifier = Modifier.testTag("tab_terminal")
+                )
+
+                // Tab 5: Logs & Web
+                NavigationBarItem(
+                    selected = currentTab == 5,
+                    onClick = { currentTab = 5 },
+                    icon = {
+                        Icon(
+                            imageVector = if (currentTab == 5) Icons.Default.Language else Icons.Outlined.Language,
                             contentDescription = "Web & Logs"
                         )
                     },
-                    label = { Text("Web & Logs", fontSize = 11.sp, fontWeight = if (currentTab == 3) FontWeight.Bold else FontWeight.Normal) },
+                    label = { Text("Web & Logs", fontSize = 11.sp, fontWeight = if (currentTab == 5) FontWeight.Bold else FontWeight.Normal) },
                     modifier = Modifier.testTag("tab_web_logs")
                 )
             }
@@ -240,17 +287,23 @@ fun TeleStreamApp(viewModel: TeleStreamViewModel) {
                 0 -> DashboardScreen(
                     viewModel = viewModel,
                     onNavigateToFiles = { currentTab = 1 },
-                    onNavigateToBotSetup = { currentTab = 2 },
+                    onNavigateToBotSetup = { currentTab = 3 },
                     onOpenCreateDialog = { showCreateDialog = true }
                 )
                 1 -> FilesScreen(
                     viewModel = viewModel,
                     onOpenCreateDialog = { showCreateDialog = true }
                 )
-                2 -> BotConfigScreen(
+                2 -> MtprotoServerScreen(
                     viewModel = viewModel
                 )
-                3 -> WebPortalAndLogsScreen(
+                3 -> BotConfigScreen(
+                    viewModel = viewModel
+                )
+                4 -> TerminalScreen(
+                    viewModel = viewModel
+                )
+                5 -> WebPortalAndLogsScreen(
                     viewModel = viewModel
                 )
             }

@@ -14,6 +14,47 @@ import java.util.Locale
 
 object NetworkUtils {
 
+    fun getLocalIpAddress(): String {
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "127.0.0.1"
+            for (intf in interfaces) {
+                if (!intf.isUp || intf.isLoopback) continue
+                val addresses = intf.inetAddresses ?: continue
+                for (addr in addresses) {
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                        val host = addr.hostAddress
+                        if (!host.isNullOrBlank() && !host.startsWith("127.")) return host
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return "127.0.0.1"
+    }
+
+    fun getAllIpAddresses(): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return listOf("Localhost" to "127.0.0.1")
+            for (intf in interfaces) {
+                if (!intf.isUp) continue
+                val addresses = intf.inetAddresses ?: continue
+                for (addr in addresses) {
+                    if (addr is Inet4Address) {
+                        val name = intf.displayName.ifBlank { intf.name }
+                        val ip = addr.hostAddress ?: ""
+                        if (ip.isNotBlank()) {
+                            result.add(name to ip)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        if (result.isEmpty()) {
+            result.add("Localhost" to "127.0.0.1")
+        }
+        return result
+    }
+
     fun getDeviceIpAddress(context: Context): String {
         try {
             // Try Wi-Fi Manager first

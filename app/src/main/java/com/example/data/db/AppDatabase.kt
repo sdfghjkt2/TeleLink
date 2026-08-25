@@ -34,14 +34,25 @@ class Converters {
 }
 
 @Database(
-    entities = [StreamFileItem::class, ServerLog::class],
-    version = 2,
+    entities = [
+        StreamFileItem::class,
+        ServerLog::class,
+        BotEntity::class,
+        ServerConfigEntity::class,
+        ApiRequestLogEntity::class,
+        SandboxMessageEntity::class
+    ],
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun streamFileDao(): StreamFileDao
     abstract fun serverLogDao(): ServerLogDao
+    abstract fun serverConfigDao(): ServerConfigDao
+    abstract fun botDao(): BotDao
+    abstract fun apiRequestLogDao(): ApiRequestLogDao
+    abstract fun sandboxMessageDao(): SandboxMessageDao
 
     companion object {
         @Volatile

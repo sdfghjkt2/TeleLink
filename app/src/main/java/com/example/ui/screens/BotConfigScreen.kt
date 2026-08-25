@@ -1,10 +1,12 @@
 package com.example.ui.screens
 
+import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.AutoUpdateCard
+import com.example.ui.components.MtprotoHostHubCard
 import com.example.ui.theme.ServerEmerald
 import com.example.ui.theme.TelegramBlue
 import com.example.ui.theme.TelegramLightBlue
@@ -365,25 +368,89 @@ fun BotConfigScreen(
                     )
 
                     if (apiId.isNotBlank() && apiHash.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF2E7D32),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Direct MTProto API credentials ready for 2GB file operations",
-                                fontSize = 12.sp,
-                                color = Color(0xFF2E7D32),
-                                fontWeight = FontWeight.Medium
-                            )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF2E7D32),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "API ID & Hash Saved",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF2E7D32)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Telegram's public cloud (api.telegram.org) strictly limits bot downloads to 20MB. To download up to 2,000MB (2GB), run Telegram's local bot-api server on this phone (via Termux) or on a PC:",
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Termux Command
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("📱 Run on this phone (Termux):", fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                                    TextButton(
+                                        onClick = {
+                                            val cmd = "pkg update -y && pkg install -y telegram-bot-api && telegram-bot-api --api-id=${apiId.trim()} --api-hash=${apiHash.trim()} --local --http-port=8081"
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("Termux Command", cmd))
+                                            Toast.makeText(context, "Copied Termux command to clipboard!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                    ) {
+                                        Text("Copy Command", fontSize = 11.sp)
+                                    }
+                                }
+
+                                Text(
+                                    text = "pkg install telegram-bot-api && telegram-bot-api --api-id=${apiId.trim()} --api-hash=... --local --http-port=8081",
+                                    fontSize = 10.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    color = TelegramBlue
+                                )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Then set 'Custom Telegram Bot API Server URL' below to http://127.0.0.1:8081",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
                 }
             }
+        }
+
+        // MTProto 2GB Server Host Hub
+        item {
+            MtprotoHostHubCard(
+                apiId = apiId,
+                apiHash = apiHash,
+                botToken = token,
+                currentCustomUrl = customBotApiUrl,
+                onApplyCustomUrl = { appliedUrl ->
+                    customBotApiUrl = appliedUrl
+                }
+            )
         }
 
         // Server Port & Tunnel Config
