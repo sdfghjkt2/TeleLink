@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -261,6 +262,25 @@ class TelegramBotServer(
                 delay(config.simulateLatencyMs.toLong())
             }
 
+            val fileBotPrefix = "/file/bot"
+            if (pathOnly.startsWith(fileBotPrefix)) {
+                val afterFileBot = pathOnly.substring(fileBotPrefix.length)
+                val slashIdx = afterFileBot.indexOf('/')
+                val token = if (slashIdx != -1) afterFileBot.substring(0, slashIdx) else ""
+                val filePath = if (slashIdx != -1) afterFileBot.substring(slashIdx + 1) else afterFileBot
+                botToken = token
+                apiMethod = "getFilePayload"
+
+                handleFileStreamProxy(
+                    token = token,
+                    filePath = filePath,
+                    requestHeaders = headers,
+                    output = output,
+                    config = config
+                )
+                return
+            }
+
             val (status, resp) = routeRequest(
                 httpMethod = httpMethod,
                 fullPath = pathOnly,
@@ -330,6 +350,90 @@ class TelegramBotServer(
         }
     }
 
+    private suspend fun handleFileStreamProxy(
+        token: String,
+        filePath: String,
+        requestHeaders: Map<String, String>,
+        output: OutputStream,
+        config: ServerConfigEntity
+    ) {
+        val baseApiUrl = if (config.customBotApiUrl.isNotBlank() && !config.customBotApiUrl.contains("8081")) {
+            config.customBotApiUrl.trimEnd('/')
+        } else {
+            "https://api.telegram.org"
+        }
+
+        val targetUrl = "$baseApiUrl/file/bot$token/$filePath"
+        val reqBuilder = Request.Builder().url(targetUrl)
+        val clientRange = requestHeaders["range"]
+        if (!clientRange.isNullOrBlank()) {
+            reqBuilder.header("Range", clientRange)
+        }
+
+        try {
+            val response = withContext(Dispatchers.IO) { okHttpClient.newCall(reqBuilder.build()).execute() }
+            val code = response.code
+            val body = response.body
+            val contentType = response.header("Content-Type") ?: "application/octet-stream"
+
+            if (response.isSuccessful || code == 206) {
+                val statusText = if (code == 206) "206 Partial Content" else "200 OK"
+                val headerBuilder = StringBuilder()
+                    .append("HTTP/1.1 $statusText\r\n")
+                    .append("Content-Type: $contentType\r\n")
+                    .append("Access-Control-Allow-Origin: *\r\n")
+                    .append("Server: MTProto-Bot-Gateway/2.4.0\r\n")
+
+                val cl = response.header("Content-Length")
+                if (!cl.isNullOrBlank()) {
+                    headerBuilder.append("Content-Length: $cl\r\n")
+                }
+                val cr = response.header("Content-Range")
+                if (!cr.isNullOrBlank()) {
+                    headerBuilder.append("Content-Range: $cr\r\n")
+                }
+                val ar = response.header("Accept-Ranges")
+                if (!ar.isNullOrBlank()) {
+                    headerBuilder.append("Accept-Ranges: $ar\r\n")
+                }
+                headerBuilder.append("Connection: close\r\n\r\n")
+
+                output.write(headerBuilder.toString().toByteArray(StandardCharsets.UTF_8))
+                output.flush()
+
+                if (body != null) {
+                    val input = body.byteStream()
+                    val buffer = ByteArray(64 * 1024)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        output.flush()
+                    }
+                    input.close()
+                }
+            } else {
+                val errorJson = toJson(TgResponse<Unit>(
+                    ok = false,
+                    error_code = code,
+                    description = "Telegram file stream returned HTTP $code. Note: Telegram Cloud API restricts downloads over 20MB."
+                ))
+                val respBytes = errorJson.toByteArray(StandardCharsets.UTF_8)
+                val respHeader = "HTTP/1.1 $code Error\r\nContent-Type: application/json\r\nContent-Length: ${respBytes.size}\r\nConnection: close\r\n\r\n"
+                output.write(respHeader.toByteArray(StandardCharsets.UTF_8))
+                output.write(respBytes)
+                output.flush()
+            }
+            response.close()
+        } catch (e: Exception) {
+            val errorJson = toJson(TgResponse<Unit>(ok = false, error_code = 502, description = "File gateway error: ${e.message}"))
+            val respBytes = errorJson.toByteArray(StandardCharsets.UTF_8)
+            val respHeader = "HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\nContent-Length: ${respBytes.size}\r\nConnection: close\r\n\r\n"
+            output.write(respHeader.toByteArray(StandardCharsets.UTF_8))
+            output.write(respBytes)
+            output.flush()
+        }
+    }
+
     private suspend fun routeRequest(
         httpMethod: String,
         fullPath: String,
@@ -354,7 +458,7 @@ class TelegramBotServer(
                 "uptime_sec" to (if (startTimeMillis > 0) (System.currentTimeMillis() - startTimeMillis) / 1000 else 0),
                 "total_requests" to totalRequests.get(),
                 "endpoints_supported" to listOf(
-                    "getMe", "sendMessage", "getUpdates", "setWebhook", "getWebhookInfo",
+                    "getMe", "sendMessage", "getUpdates", "getFile", "setWebhook", "getWebhookInfo",
                     "deleteWebhook", "getMyCommands", "setMyCommands", "sendPhoto", "sendChatAction"
                 )
             )
@@ -362,58 +466,31 @@ class TelegramBotServer(
         }
 
         val botPrefix = "/bot"
-        val fileBotPrefix = "/file/bot"
 
-        if (fullPath.startsWith(fileBotPrefix)) {
-            val afterFileBot = fullPath.substring(fileBotPrefix.length)
-            val slashIdx = afterFileBot.indexOf('/')
-            val token = if (slashIdx != -1) afterFileBot.substring(0, slashIdx) else ""
-            val filePath = if (slashIdx != -1) afterFileBot.substring(slashIdx + 1) else afterFileBot
-            onRouteMeta(token, "getFilePayload")
+        if (fullPath.startsWith(botPrefix)) {
+            val afterBot = fullPath.substring(botPrefix.length).trim('/')
+            if (afterBot.isEmpty()) {
+                val statusMap = mapOf(
+                    "status" to "running",
+                    "engine" to "MTProto Bot API Server",
+                    "info" to "Telegram Bot API server is online. Use /bot<token>/getMe or /bot<token>/sendMessage"
+                )
+                return Pair(200, toJson(statusMap))
+            }
+
+            val slashIdx = afterBot.indexOf('/')
+            val token = if (slashIdx != -1) afterBot.substring(0, slashIdx) else afterBot
+            val method = if (slashIdx != -1) afterBot.substring(slashIdx + 1).ifBlank { "getMe" } else "getMe"
+            onRouteMeta(token, method)
 
             if (config.mode == ServerMode.MTPROTO_GATEWAY.name) {
-                val baseApiUrl = if (config.customBotApiUrl.isNotBlank() && !config.customBotApiUrl.contains("8081")) {
-                    config.customBotApiUrl.trimEnd('/')
-                } else {
-                    "https://api.telegram.org"
-                }
-                val targetUrl = "$baseApiUrl/file/bot$token/$filePath"
-                return try {
-                    val req = Request.Builder().url(targetUrl).get().build()
-                    val resp = okHttpClient.newCall(req).execute()
-                    if (resp.isSuccessful) {
-                        Pair(resp.code, resp.body?.string() ?: "{}")
-                    } else {
-                        // 2GB local MTProto stream payload fallback for large files
-                        Pair(200, "{\"ok\":true,\"status\":\"MTProto 2GB Local Stream Payload Active\",\"file_path\":\"$filePath\"}")
-                    }
-                } catch (e: Exception) {
-                    Pair(200, "{\"ok\":true,\"status\":\"MTProto Local Stream Active\",\"file_path\":\"$filePath\"}")
-                }
+                return proxyToTelegramCloud(httpMethod, token, method, queryParams, body, contentType, config)
             } else {
-                return Pair(200, "{\"ok\":true,\"description\":\"Sandbox simulated file stream ready\",\"file_path\":\"$filePath\"}")
+                return processLocalSandboxMethod(token, method, queryParams, body)
             }
         }
 
-        if (!fullPath.startsWith(botPrefix)) {
-            return Pair(404, toJson(TgResponse<Unit>(ok = false, error_code = 404, description = "Not Found: Telegram paths must follow /bot<token>/<method> or /file/bot<token>/<file_path>")))
-        }
-
-        val afterBot = fullPath.substring(botPrefix.length)
-        val slashIdx = afterBot.indexOf('/')
-        if (slashIdx == -1) {
-            return Pair(400, toJson(TgResponse<Unit>(ok = false, error_code = 400, description = "Bad Request: Missing API method")))
-        }
-
-        val token = afterBot.substring(0, slashIdx)
-        val method = afterBot.substring(slashIdx + 1)
-        onRouteMeta(token, method)
-
-        if (config.mode == ServerMode.MTPROTO_GATEWAY.name) {
-            return proxyToTelegramCloud(httpMethod, token, method, queryParams, body, contentType, config)
-        } else {
-            return processLocalSandboxMethod(token, method, queryParams, body)
-        }
+        return Pair(404, toJson(TgResponse<Unit>(ok = false, error_code = 404, description = "Not Found: Telegram paths must follow /bot<token>/<method> or /file/bot<token>/<file_path>")))
     }
 
     private suspend fun processLocalSandboxMethod(

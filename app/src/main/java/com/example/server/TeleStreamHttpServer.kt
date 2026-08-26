@@ -428,7 +428,7 @@ class TeleStreamHttpServer(
         }
 
         val customApiUrl = repository.botConfig.value.customBotApiUrl
-        val baseApi = if (customApiUrl.isNotBlank()) customApiUrl.trimEnd('/') else "http://127.0.0.1:8081"
+        val baseApi = if (customApiUrl.isNotBlank()) customApiUrl.trimEnd('/') else "https://api.telegram.org"
 
         // 1. Get file path from file entity or cache or query Telegram / MTProto API
         var filePath = file.telegramFilePath ?: telegramFilePathCache[file.telegramFileId]
@@ -436,8 +436,38 @@ class TeleStreamHttpServer(
 
         if (filePath.isNullOrBlank()) {
             val result = fetchTelegramFilePathDetailed(cleanToken, file.telegramFileId, baseApi)
-            filePath = result.getOrNull() ?: "documents/file_${file.telegramFileId}.bin"
-            telegramFilePathCache[file.telegramFileId] = filePath
+            filePath = result.getOrNull()
+            if (!filePath.isNullOrBlank()) {
+                telegramFilePathCache[file.telegramFileId] = filePath
+            } else {
+                fetchErrorReason = result.exceptionOrNull()?.message ?: "File path resolution failed"
+            }
+        }
+
+        if (filePath.isNullOrBlank()) {
+            val isLargeFile = file.fileSize > 20 * 1024 * 1024
+            val title = if (isLargeFile) "Telegram Cloud 20MB File Limit" else "File Stream Unavailable"
+            val message = if (isLargeFile) {
+                "Telegram's public cloud API (api.telegram.org) restricts direct bot file downloads to 20MB. This file is ${NetworkUtils.formatBytes(file.fileSize)} (${file.fileName})."
+            } else {
+                fetchErrorReason ?: "Could not resolve file path from Telegram servers."
+            }
+
+            val suggestion = if (isLargeFile) {
+                "To stream and download files over 20MB (up to 2,000MB / 2GB), run a local Telegram Bot API Server (via Termux on this phone or Docker on PC) and configure 'Custom Telegram Bot API Server URL' in the TeleStream app under 'Bot Setup'."
+            } else {
+                "Verify your Telegram Bot token and ensure the bot has permission to access the media file."
+            }
+
+            sendStyledError(
+                output = output,
+                code = 400,
+                title = title,
+                message = message,
+                suggestion = suggestion,
+                file = file
+            )
+            return
         }
 
         var tgFileUrl = "$baseApi/file/bot$cleanToken/$filePath"
@@ -451,76 +481,44 @@ class TeleStreamHttpServer(
             try {
                 okHttpCall.execute()
             } catch (e: Exception) {
-                // If connecting to baseApi fails, try local MTProto server or public
-                val altUrl = "http://127.0.0.1:8081/file/bot$cleanToken/$filePath"
-                try {
-                    okHttpClient.newCall(Request.Builder().url(altUrl).build()).execute()
-                } catch (e2: Exception) {
-                    null
-                }
+                null
             }
         }
 
-        // If path failed or gave error, try local MTProto server fallback
-        if (tgResponse == null || (!tgResponse.isSuccessful && tgResponse.code != 206)) {
+        val tgContentType = tgResponse?.header("Content-Type") ?: ""
+        val isJsonResponse = tgContentType.contains("application/json", ignoreCase = true)
+        val isSuccessfulStream = tgResponse != null && (tgResponse.isSuccessful || tgResponse.code == 206) && !isJsonResponse
+
+        if (!isSuccessfulStream) {
+            val respCode = tgResponse?.code ?: 502
+            val isLargeFile = file.fileSize > 20 * 1024 * 1024
             tgResponse?.close()
-            telegramFilePathCache.remove(file.telegramFileId)
-            val freshResult = fetchTelegramFilePathDetailed(cleanToken, file.telegramFileId, "http://127.0.0.1:8081")
-            val freshPath = freshResult.getOrNull() ?: "documents/file_${file.telegramFileId}.bin"
-            telegramFilePathCache[file.telegramFileId] = freshPath
-            tgFileUrl = "http://127.0.0.1:8081/file/bot$cleanToken/$freshPath"
-            reqBuilder = Request.Builder().url(tgFileUrl)
-            if (!rangeHeader.isNullOrBlank()) {
-                reqBuilder.header("Range", rangeHeader)
-            }
-            tgResponse = withContext(Dispatchers.IO) {
-                try {
-                    okHttpClient.newCall(reqBuilder.build()).execute()
-                } catch (e: Exception) {
-                    null
-                }
-            }
-        }
 
-        if (tgResponse == null || (!tgResponse.isSuccessful && tgResponse.code != 206)) {
-            // If external endpoints failed (e.g. offline or strict firewall), serve simulated media stream
-            val dispositionType = if (isDownload) "attachment" else "inline"
-            val encodedName = URLEncoder.encode(file.fileName, "UTF-8").replace("+", "%20")
-            val dummyLength = if (file.fileSize > 0) file.fileSize else 104857600L
-            val simulatedHeader = StringBuilder()
-                .append("HTTP/1.1 200 OK\r\n")
-                .append("Content-Type: ${file.mimeType}\r\n")
-                .append("Accept-Ranges: bytes\r\n")
-                .append("Content-Disposition: $dispositionType; filename=\"${file.fileName}\"; filename*=UTF-8''$encodedName\r\n")
-                .append("Access-Control-Allow-Origin: *\r\n")
-                .append("Content-Length: $dummyLength\r\n")
-                .append("Connection: close\r\n\r\n")
-                .toString()
-
-            output.write(simulatedHeader.toByteArray())
-            output.flush()
-
-            if (isHead) {
-                tgResponse?.close()
-                return
+            val title = if (isLargeFile) "Telegram Cloud 20MB File Limit" else "Telegram CDN Download Error ($respCode)"
+            val message = if (isLargeFile) {
+                "Telegram Cloud API refused to stream ${file.fileName} (${NetworkUtils.formatBytes(file.fileSize)}) due to public 20MB Bot API restrictions."
+            } else {
+                "Telegram download servers returned HTTP $respCode for this file."
             }
 
-            // Stream chunk payload
-            val buffer = ByteArray(64 * 1024)
-            var streamed = 0L
-            while (streamed < dummyLength.coerceAtMost(5 * 1024 * 1024)) {
-                val toWrite = (dummyLength - streamed).coerceAtMost(buffer.size.toLong()).toInt()
-                output.write(buffer, 0, toWrite)
-                output.flush()
-                streamed += toWrite
-                totalBytesStreamedCounter.addAndGet(toWrite.toLong())
-                currentSecondBytes.addAndGet(toWrite.toLong())
+            val suggestion = if (isLargeFile) {
+                "To stream or download files over 20MB (up to 2GB), connect a local Telegram Bot API server in app settings under 'Bot Setup' -> 'Custom Telegram Bot API Server URL'."
+            } else {
+                "The file link may have expired on Telegram CDN. Re-send the file in Telegram to generate a fresh link."
             }
-            tgResponse?.close()
+
+            sendStyledError(
+                output = output,
+                code = respCode,
+                title = title,
+                message = message,
+                suggestion = suggestion,
+                file = file
+            )
             return
         }
 
-        val body = tgResponse.body
+        val body = tgResponse!!.body
         if (body == null) {
             sendNotFound(output)
             tgResponse.close()
@@ -528,7 +526,7 @@ class TeleStreamHttpServer(
         }
 
         val contentLength = body.contentLength()
-        val tgContentType = tgResponse.header("Content-Type") ?: file.mimeType
+        val effectiveContentType = if (tgContentType.isNotBlank() && !isJsonResponse) tgContentType else file.mimeType
         val isPartial = tgResponse.code == 206
         val contentRange = tgResponse.header("Content-Range")
 
@@ -538,7 +536,7 @@ class TeleStreamHttpServer(
         val statusLine = if (isPartial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n"
         val headerBuilder = StringBuilder()
             .append(statusLine)
-            .append("Content-Type: $tgContentType\r\n")
+            .append("Content-Type: $effectiveContentType\r\n")
             .append("Accept-Ranges: bytes\r\n")
             .append("Content-Disposition: $dispositionType; filename=\"${file.fileName}\"; filename*=UTF-8''$encodedName\r\n")
             .append("Access-Control-Allow-Origin: *\r\n")
@@ -584,15 +582,16 @@ class TeleStreamHttpServer(
     private suspend fun fetchTelegramFilePathDetailed(
         botToken: String,
         fileId: String,
-        baseApi: String = "http://127.0.0.1:8081"
+        baseApi: String = "https://api.telegram.org"
     ): Result<String> {
         return withContext(Dispatchers.IO) {
             val endpointsToTry = mutableListOf<String>()
             if (baseApi.isNotBlank()) endpointsToTry.add(baseApi.trimEnd('/'))
-            if (!endpointsToTry.contains("http://127.0.0.1:8081")) endpointsToTry.add("http://127.0.0.1:8081")
             if (!endpointsToTry.contains("https://api.telegram.org")) endpointsToTry.add("https://api.telegram.org")
+            if (!endpointsToTry.contains("http://127.0.0.1:8081")) endpointsToTry.add("http://127.0.0.1:8081")
 
             val cleanToken = botToken.trim()
+            var lastErrorDescription = "Failed to resolve file path"
 
             for (endpoint in endpointsToTry) {
                 try {
@@ -607,13 +606,19 @@ class TeleStreamHttpServer(
                                 if (path.isNotBlank()) {
                                     return@withContext Result.success(path)
                                 }
+                            } else {
+                                val desc = json.optString("description", "")
+                                if (desc.isNotBlank()) {
+                                    lastErrorDescription = desc
+                                }
                             }
                         }
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    lastErrorDescription = e.message ?: lastErrorDescription
+                }
             }
-            // MTProto 2GB fallback stream path
-            Result.success("documents/file_$fileId.bin")
+            Result.failure(Exception(lastErrorDescription))
         }
     }
 
