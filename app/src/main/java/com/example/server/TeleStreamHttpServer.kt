@@ -525,10 +525,35 @@ class TeleStreamHttpServer(
             return
         }
 
-        val contentLength = body.contentLength()
+        val totalFileSize = if (file.fileSize > 0) file.fileSize else 0L
+        var reqStartByte = 0L
+        var reqEndByte = if (totalFileSize > 0) totalFileSize - 1 else -1L
+        var clientRequestedRange = false
+
+        if (!rangeHeader.isNullOrBlank() && rangeHeader.startsWith("bytes=")) {
+            val rangeVal = rangeHeader.removePrefix("bytes=").trim()
+            val dashIdx = rangeVal.indexOf('-')
+            if (dashIdx != -1) {
+                val sStr = rangeVal.substring(0, dashIdx).trim()
+                val eStr = rangeVal.substring(dashIdx + 1).trim()
+                if (sStr.isNotEmpty()) reqStartByte = sStr.toLongOrNull() ?: 0L
+                if (eStr.isNotEmpty()) reqEndByte = eStr.toLongOrNull() ?: reqEndByte
+                clientRequestedRange = true
+            }
+        }
+
+        val upstreamContentLength = body.contentLength()
         val effectiveContentType = if (tgContentType.isNotBlank() && !isJsonResponse) tgContentType else file.mimeType
-        val isPartial = tgResponse.code == 206
-        val contentRange = tgResponse.header("Content-Range")
+        val isUpstreamPartial = tgResponse.code == 206
+        val upstreamContentRange = tgResponse.header("Content-Range")
+
+        // Check if we should slice the stream locally if upstream returned 200 OK for a range request
+        val shouldLocalSlice = !isUpstreamPartial && clientRequestedRange && totalFileSize > 0 &&
+                (reqStartByte > 0 || (reqEndByte != -1L && reqEndByte < totalFileSize - 1))
+
+        val isPartial = isUpstreamPartial || shouldLocalSlice
+        val effectiveEnd = if (reqEndByte != -1L && totalFileSize > 0) reqEndByte.coerceAtMost(totalFileSize - 1) else if (totalFileSize > 0) totalFileSize - 1 else -1L
+        val sliceLength = if (shouldLocalSlice && effectiveEnd >= reqStartByte) effectiveEnd - reqStartByte + 1 else -1L
 
         val dispositionType = if (isDownload) "attachment" else "inline"
         val encodedName = URLEncoder.encode(file.fileName, "UTF-8").replace("+", "%20")
@@ -540,16 +565,28 @@ class TeleStreamHttpServer(
             .append("Accept-Ranges: bytes\r\n")
             .append("Content-Disposition: $dispositionType; filename=\"${file.fileName}\"; filename*=UTF-8''$encodedName\r\n")
             .append("Access-Control-Allow-Origin: *\r\n")
+            .append("Access-Control-Expose-Headers: Content-Length, Content-Range, Accept-Ranges\r\n")
 
-        if (contentLength > 0) {
-            headerBuilder.append("Content-Length: $contentLength\r\n")
+        val effectiveContentLength = when {
+            shouldLocalSlice -> sliceLength
+            upstreamContentLength > 0 -> upstreamContentLength
+            totalFileSize > 0 && !isPartial -> totalFileSize
+            else -> -1L
         }
-        if (!contentRange.isNullOrBlank()) {
-            headerBuilder.append("Content-Range: $contentRange\r\n")
+
+        if (effectiveContentLength > 0) {
+            headerBuilder.append("Content-Length: $effectiveContentLength\r\n")
         }
+
+        if (isUpstreamPartial && !upstreamContentRange.isNullOrBlank()) {
+            headerBuilder.append("Content-Range: $upstreamContentRange\r\n")
+        } else if (shouldLocalSlice && totalFileSize > 0) {
+            headerBuilder.append("Content-Range: bytes $reqStartByte-$effectiveEnd/$totalFileSize\r\n")
+        }
+
         headerBuilder.append("Connection: keep-alive\r\n\r\n")
 
-        output.write(headerBuilder.toString().toByteArray())
+        output.write(headerBuilder.toString().toByteArray(Charsets.UTF_8))
         output.flush()
 
         if (isHead) {
@@ -563,15 +600,30 @@ class TeleStreamHttpServer(
             message = "Streaming from Telegram: ${file.fileName} (${NetworkUtils.formatBytes(file.fileSize)})",
             level = LogLevel.SUCCESS,
             clientIp = clientIp,
-            statusCode = tgResponse.code
+            statusCode = if (isPartial) 206 else 200
         )
 
         body.byteStream().use { inputStream ->
+            if (shouldLocalSlice && reqStartByte > 0) {
+                var skipped = 0L
+                while (skipped < reqStartByte) {
+                    val n = inputStream.skip(reqStartByte - skipped)
+                    if (n <= 0) break
+                    skipped += n
+                }
+            }
+
             val buffer = ByteArray(64 * 1024)
-            var read: Int
-            while (inputStream.read(buffer).also { read = it } != -1) {
+            var remainingToStream = if (shouldLocalSlice) sliceLength else Long.MAX_VALUE
+            var read = 0
+
+            while (remainingToStream > 0) {
+                val maxToRead = buffer.size.toLong().coerceAtMost(remainingToStream).toInt()
+                read = inputStream.read(buffer, 0, maxToRead)
+                if (read == -1) break
                 output.write(buffer, 0, read)
                 output.flush()
+                if (shouldLocalSlice) remainingToStream -= read
                 totalBytesStreamedCounter.addAndGet(read.toLong())
                 currentSecondBytes.addAndGet(read.toLong())
             }

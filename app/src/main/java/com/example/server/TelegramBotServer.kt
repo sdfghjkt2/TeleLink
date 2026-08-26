@@ -765,32 +765,9 @@ class TelegramBotServer(
             val respCode = response.code
             val respStr = response.body?.string() ?: "{}"
 
-            // If Telegram Cloud rejects getFile with 20MB limit (HTTP 400 "file is too big"),
-            // synthesize a valid MTProto file_path response so downloads and streaming proceed smoothly.
-            if (method.equals("getfile", ignoreCase = true) && (respCode == 400 || respStr.contains("file is too big", ignoreCase = true))) {
-                val fileId = queryParams["file_id"] ?: queryParams["fileId"] ?: "sample_file_id"
-                val fileResult = mapOf(
-                    "file_id" to fileId,
-                    "file_unique_id" to "uniq_${fileId.hashCode()}",
-                    "file_size" to 104857600L,
-                    "file_path" to "documents/file_$fileId.bin"
-                )
-                return Pair(200, toJson(TgResponse(ok = true, result = fileResult)))
-            }
-
             Pair(respCode, respStr)
         } catch (e: Exception) {
             Log.e(tag, "MTProto Gateway proxy failed: ${e.message}", e)
-            if (method.equals("getfile", ignoreCase = true)) {
-                val fileId = queryParams["file_id"] ?: queryParams["fileId"] ?: "sample_file_id"
-                val fileResult = mapOf(
-                    "file_id" to fileId,
-                    "file_unique_id" to "uniq_${fileId.hashCode()}",
-                    "file_size" to 104857600L,
-                    "file_path" to "documents/file_$fileId.bin"
-                )
-                return Pair(200, toJson(TgResponse(ok = true, result = fileResult)))
-            }
             Pair(
                 502,
                 toJson(

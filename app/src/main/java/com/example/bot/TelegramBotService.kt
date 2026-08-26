@@ -389,8 +389,11 @@ class TelegramBotService(
                 appendLine("<code>$playerUrl</code>")
                 appendLine()
 
-                if (isLargeFile) {
-                    appendLine("⚡ <b>MTProto 2GB Server Active:</b> File size ($formattedSize) is powered by local MTProto 2,000MB high-speed engine without 20MB cloud restrictions.")
+                if (isLargeFile && tgFilePath == null) {
+                    appendLine("ℹ️ <b>Note for Files >20MB:</b> Telegram Cloud limits public bot downloads to 20MB. To stream files up to 2GB, ensure your local Telegram Bot API Server is configured in the TeleStream app settings.")
+                    appendLine()
+                } else if (isLargeFile) {
+                    appendLine("⚡ <b>MTProto 2GB Server Active:</b> File size ($formattedSize) is ready for direct high-speed streaming.")
                     appendLine()
                 }
 
@@ -435,8 +438,7 @@ class TelegramBotService(
                     }
                 } catch (_: Exception) {}
             }
-            // MTProto fallback path for seamless 2GB streaming
-            "documents/file_$fileId.bin"
+            null
         }
     }
 
