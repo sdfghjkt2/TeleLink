@@ -61,6 +61,7 @@ import com.example.bot.BotPollingStatus
 import com.example.data.model.StreamFileItem
 import com.example.data.model.UpdateStatus
 import com.example.ui.components.FileItemCard
+import com.example.ui.components.MtprotoServerStatusCard
 import com.example.ui.components.ServerStatusHero
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.ServerEmerald
@@ -78,6 +79,8 @@ fun DashboardScreen(
 ) {
     val context = LocalContext.current
     val serverStats by viewModel.serverStats.collectAsStateWithLifecycle()
+    val mtprotoStats by viewModel.mtprotoStats.collectAsStateWithLifecycle()
+    val mtprotoConfig by viewModel.mtprotoConfig.collectAsStateWithLifecycle()
     val botStatus by viewModel.botStatus.collectAsStateWithLifecycle()
     val botConfig by viewModel.botConfig.collectAsStateWithLifecycle()
     val recentFiles by viewModel.filteredFiles.collectAsStateWithLifecycle()
@@ -175,7 +178,17 @@ fun DashboardScreen(
             )
         }
 
-        // 2. Telegram Bot Live Status Banner
+        // 2. MTProto Server Status & Active Port Monitor
+        item {
+            MtprotoServerStatusCard(
+                isRunning = mtprotoStats.isRunning,
+                port = mtprotoConfig.port,
+                totalRequests = mtprotoStats.totalRequests,
+                onToggle = { viewModel.toggleMtprotoServer() }
+            )
+        }
+
+        // 3. Telegram Bot Live Status Banner
         item {
             TelegramBotHeroCard(
                 botStatus = botStatus,
