@@ -40,10 +40,10 @@ class ServerRepository(private val db: AppDatabase) {
         val existingBots = botDao.getAllBots()
         if (existingBots.isEmpty()) {
             val sampleBot = BotEntity(
-                token = "8341113063:AAF9o_bZc62q1jX-nO871_4Q5cEvsW_sample",
-                botId = 8341113063L,
-                firstName = "TeleStream MTProto Bot",
-                username = "telestream_mtproto_bot",
+                token = "8590847613:AAGo5TCv74JzoQzVcMsZmYjAqwdjf_OEgcA",
+                botId = 8590847613L,
+                firstName = "TeleStream Bot",
+                username = "telestream_bot",
                 canJoinGroups = true,
                 isDefault = true
             )

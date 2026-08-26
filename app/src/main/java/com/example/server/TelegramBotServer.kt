@@ -362,8 +362,36 @@ class TelegramBotServer(
         }
 
         val botPrefix = "/bot"
+        val fileBotPrefix = "/file/bot"
+
+        if (fullPath.startsWith(fileBotPrefix)) {
+            val afterFileBot = fullPath.substring(fileBotPrefix.length)
+            val slashIdx = afterFileBot.indexOf('/')
+            val token = if (slashIdx != -1) afterFileBot.substring(0, slashIdx) else ""
+            val filePath = if (slashIdx != -1) afterFileBot.substring(slashIdx + 1) else afterFileBot
+            onRouteMeta(token, "getFilePayload")
+
+            if (config.mode == ServerMode.MTPROTO_GATEWAY.name) {
+                val baseApiUrl = if (config.customBotApiUrl.isNotBlank() && !config.customBotApiUrl.contains("8081")) {
+                    config.customBotApiUrl.trimEnd('/')
+                } else {
+                    "https://api.telegram.org"
+                }
+                val targetUrl = "$baseApiUrl/file/bot$token/$filePath"
+                return try {
+                    val req = Request.Builder().url(targetUrl).get().build()
+                    val resp = okHttpClient.newCall(req).execute()
+                    Pair(resp.code, resp.body?.string() ?: "{}")
+                } catch (e: Exception) {
+                    Pair(502, toJson(TgResponse<Unit>(ok = false, error_code = 502, description = "File fetch failed: ${e.message}")))
+                }
+            } else {
+                return Pair(200, "{\"ok\":true,\"description\":\"Sandbox simulated file stream ready\"}")
+            }
+        }
+
         if (!fullPath.startsWith(botPrefix)) {
-            return Pair(404, toJson(TgResponse<Unit>(ok = false, error_code = 404, description = "Not Found: Telegram paths must follow /bot<token>/<method>")))
+            return Pair(404, toJson(TgResponse<Unit>(ok = false, error_code = 404, description = "Not Found: Telegram paths must follow /bot<token>/<method> or /file/bot<token>/<file_path>")))
         }
 
         val afterBot = fullPath.substring(botPrefix.length)
@@ -510,6 +538,17 @@ class TelegramBotServer(
                 Pair(200, toJson(TgResponse(ok = true, result = true)))
             }
 
+            "getfile" -> {
+                val fileId = mergedParams["file_id"] ?: mergedParams["fileId"] ?: "sample_file_id"
+                val fileResult = mapOf(
+                    "file_id" to fileId,
+                    "file_unique_id" to "uniq_${fileId.hashCode()}",
+                    "file_size" to 104857600L,
+                    "file_path" to "documents/file_$fileId.mp4"
+                )
+                Pair(200, toJson(TgResponse(ok = true, result = fileResult)))
+            }
+
             "getupdates" -> {
                 val offset = mergedParams["offset"]?.toLongOrNull() ?: 0
                 val limit = (mergedParams["limit"]?.toIntOrNull() ?: 100).coerceIn(1, 100)
@@ -618,7 +657,11 @@ class TelegramBotServer(
         config: ServerConfigEntity
     ): Pair<Int, String> {
         return try {
-            val baseApiUrl = config.customBotApiUrl.trimEnd('/')
+            val baseApiUrl = if (config.customBotApiUrl.isNotBlank() && !config.customBotApiUrl.contains("8081")) {
+                config.customBotApiUrl.trimEnd('/')
+            } else {
+                "https://api.telegram.org"
+            }
             var targetUrl = "$baseApiUrl/bot$token/$method"
 
             if (queryParams.isNotEmpty()) {

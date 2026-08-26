@@ -29,15 +29,15 @@ class StreamRepository(
 
     private fun loadBotConfig(): BotConfig {
         return BotConfig(
-            botToken = prefs.getString("bot_token", "") ?: "",
-            botUsername = prefs.getString("bot_username", "") ?: "",
-            botName = prefs.getString("bot_name", "") ?: "",
-            telegramApiId = prefs.getString("telegram_api_id", "") ?: "",
-            telegramApiHash = prefs.getString("telegram_api_hash", "") ?: "",
+            botToken = prefs.getString("bot_token", "8590847613:AAGo5TCv74JzoQzVcMsZmYjAqwdjf_OEgcA") ?: "8590847613:AAGo5TCv74JzoQzVcMsZmYjAqwdjf_OEgcA",
+            botUsername = prefs.getString("bot_username", "TeleStreamBot") ?: "TeleStreamBot",
+            botName = prefs.getString("bot_name", "TeleStream Bot") ?: "TeleStream Bot",
+            telegramApiId = prefs.getString("telegram_api_id", "35633835") ?: "35633835",
+            telegramApiHash = prefs.getString("telegram_api_hash", "a7d8cdf50ddc75cbed4a0f709a2bcd78") ?: "a7d8cdf50ddc75cbed4a0f709a2bcd78",
             isBotActive = prefs.getBoolean("is_bot_active", false),
             serverPort = prefs.getInt("server_port", 8080),
             customDomain = prefs.getString("custom_domain", "") ?: "",
-            customBotApiUrl = prefs.getString("custom_bot_api_url", "") ?: "",
+            customBotApiUrl = prefs.getString("custom_bot_api_url", "http://127.0.0.1:8081") ?: "http://127.0.0.1:8081",
             adminUserIds = prefs.getString("admin_user_ids", "") ?: "",
             autoDeleteAfterDays = prefs.getInt("auto_delete_days", 0),
             welcomeMessage = prefs.getString("welcome_message", "👋 Hello! Send me any file, video, or audio to get high-speed browser download links and web stream player!") ?: "",

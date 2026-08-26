@@ -75,6 +75,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -258,6 +259,10 @@ private fun MtprotoControlsSubTab(
 
                 if (serverStats.isRunning) {
                     Spacer(modifier = Modifier.height(14.dp))
+                    val botCfg by viewModel.botConfig.collectAsState()
+                    val activeToken = botCfg.botToken.ifBlank { "8590847613:AAGo5TCv74JzoQzVcMsZmYjAqwdjf_OEgcA" }
+                    val endpointUrl = "http://${NetworkUtils.getLocalIpAddress()}:${serverStats.port}/bot$activeToken/"
+                    
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = Color(0xFF141A23),
@@ -270,21 +275,21 @@ private fun MtprotoControlsSubTab(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
-                                Text("Local API Endpoint:", fontSize = 10.sp, color = Color(0xFF90CAF9))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Local API Endpoint (Active Bot Token):", fontSize = 10.sp, color = Color(0xFF90CAF9))
                                 Text(
-                                    text = "http://${NetworkUtils.getLocalIpAddress()}:${serverStats.port}/bot<TOKEN>/",
+                                    text = endpointUrl,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 11.sp,
-                                    color = Color.White
+                                    color = Color.White,
+                                    maxLines = 2
                                 )
                             }
                             IconButton(
                                 onClick = {
-                                    val endpoint = "http://${NetworkUtils.getLocalIpAddress()}:${serverStats.port}"
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("MTProto Server Endpoint", endpoint))
-                                    Toast.makeText(context, "Copied endpoint to clipboard!", Toast.LENGTH_SHORT).show()
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("MTProto Server Endpoint", endpointUrl))
+                                    Toast.makeText(context, "Copied full endpoint with Bot Token to clipboard!", Toast.LENGTH_SHORT).show()
                                 },
                                 modifier = Modifier.size(28.dp)
                             ) {
