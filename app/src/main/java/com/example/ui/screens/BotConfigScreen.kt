@@ -42,6 +42,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -178,10 +179,10 @@ fun BotConfigScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Test Bot Token Button
+                    // Test Bot Token & Save Token Button Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         FilledTonalButton(
@@ -191,28 +192,36 @@ fun BotConfigScreen(
                             modifier = Modifier.weight(1f).testTag("btn_test_bot_token")
                         ) {
                             if (isTesting) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Verifying...", fontSize = 12.sp)
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Verifying...", fontSize = 11.sp)
                             } else {
-                                Icon(imageVector = Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Test & Verify Bot", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Icon(imageVector = Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Test Token", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
 
+                        Button(
+                            onClick = { viewModel.saveBotToken(token) },
+                            enabled = token.isNotBlank(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = TelegramBlue),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save Token", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
                         if (currentConfig.botUsername.isNotBlank()) {
-                            Button(
+                            IconButton(
                                 onClick = {
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/${currentConfig.botUsername}"))
                                     context.startActivity(intent)
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = TelegramBlue)
+                                }
                             ) {
-                                Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("@${currentConfig.botUsername}", fontSize = 12.sp)
+                                Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = "Open Bot", tint = TelegramBlue)
                             }
                         }
                     }
@@ -367,6 +376,20 @@ fun BotConfigScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = { viewModel.saveApiCredentials(apiId, apiHash) },
+                        enabled = apiId.isNotBlank() && apiHash.isNotBlank(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = TelegramBlue),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Save API ID & Hash", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
                     if (apiId.isNotBlank() && apiHash.isNotBlank()) {
                         Spacer(modifier = Modifier.height(10.dp))
                         Surface(
@@ -449,6 +472,7 @@ fun BotConfigScreen(
                 currentCustomUrl = customBotApiUrl,
                 onApplyCustomUrl = { appliedUrl ->
                     customBotApiUrl = appliedUrl
+                    viewModel.saveCustomBotApiUrl(appliedUrl)
                 }
             )
         }
@@ -495,19 +519,71 @@ fun BotConfigScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            val port = portStr.toIntOrNull() ?: 8080
+                            viewModel.saveNetworkSettings(port, customDomain)
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = TelegramBlue),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Save Network Port & Tunnel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     OutlinedTextField(
                         value = customBotApiUrl,
                         onValueChange = { customBotApiUrl = it },
-                        label = { Text("Custom Telegram Bot API Server URL (Optional)") },
-                        placeholder = { Text("Leave empty for https://api.telegram.org (20MB limit)") },
+                        label = { Text("Custom Telegram Bot API Server URL / MTProto Endpoint") },
+                        placeholder = { Text("http://127.0.0.1:8081 or leave empty") },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Quick Chips & Save Endpoint Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FilterChip(
+                            selected = customBotApiUrl == "http://127.0.0.1:8081",
+                            onClick = { customBotApiUrl = "http://127.0.0.1:8081" },
+                            label = { Text("📱 127.0.0.1:8081", fontSize = 11.sp) },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        FilterChip(
+                            selected = customBotApiUrl.isBlank() || customBotApiUrl == "https://api.telegram.org",
+                            onClick = { customBotApiUrl = "https://api.telegram.org" },
+                            label = { Text("☁️ Cloud API", fontSize = 11.sp) },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            viewModel.saveCustomBotApiUrl(customBotApiUrl)
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = TelegramBlue),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Save & Apply MTProto Endpoint", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -531,7 +607,7 @@ fun BotConfigScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     OutlinedTextField(
                         value = welcomeMsg,
@@ -541,6 +617,19 @@ fun BotConfigScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = { viewModel.saveWelcomeMessage(welcomeMsg) },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = TelegramBlue),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Save Welcome Message", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

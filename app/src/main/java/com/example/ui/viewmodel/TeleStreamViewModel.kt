@@ -496,16 +496,80 @@ class TeleStreamViewModel(application: Application) : AndroidViewModel(applicati
         _qrFile.value = file
     }
 
-    fun saveBotConfig(config: BotConfig) {
+    fun saveBotToken(token: String) {
+        val cleanToken = token.trim()
+        val updated = botConfig.value.copy(botToken = cleanToken)
+        saveBotConfig(updated, notifyMessage = "Bot Token saved & bot restarted!")
+    }
+
+    fun saveApiCredentials(apiId: String, apiHash: String) {
+        val cleanId = apiId.trim()
+        val cleanHash = apiHash.trim()
+        val updated = botConfig.value.copy(telegramApiId = cleanId, telegramApiHash = cleanHash)
+        saveBotConfig(updated, notifyMessage = "Telegram API ID & Hash saved!")
+    }
+
+    fun saveCustomBotApiUrl(url: String) {
+        val cleanUrl = url.trim()
+        val updated = botConfig.value.copy(customBotApiUrl = cleanUrl)
+        saveBotConfig(updated, notifyMessage = "MTProto Endpoint saved & bot reconnected!")
+    }
+
+    fun saveNetworkSettings(port: Int, customDomain: String) {
+        val updated = botConfig.value.copy(serverPort = port, customDomain = customDomain.trim())
+        saveBotConfig(updated, notifyMessage = "Network & Domain settings saved!")
+    }
+
+    fun saveWelcomeMessage(message: String) {
+        val updated = botConfig.value.copy(welcomeMessage = message.trim())
+        saveBotConfig(updated, notifyMessage = "Welcome message saved!")
+    }
+
+    fun saveBotConfig(config: BotConfig, restartIfRunning: Boolean = true, notifyMessage: String? = null) {
         repository.saveBotConfig(config)
         val context = getApplication<Application>()
-        Toast.makeText(context, "Settings updated", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, notifyMessage ?: "Configuration saved & applied!", Toast.LENGTH_SHORT).show()
+
+        // Sync API ID, Hash, and bot token to MTProto Database
+        viewModelScope.launch {
+            val mtConfig = mtprotoRepository.getConfig()
+            val updatedMt = mtConfig.copy(
+                apiId = config.telegramApiId.ifBlank { mtConfig.apiId },
+                apiHash = config.telegramApiHash.ifBlank { mtConfig.apiHash },
+                customBotApiUrl = config.customBotApiUrl
+            )
+            mtprotoRepository.saveConfig(updatedMt)
+
+            if (config.botToken.isNotBlank()) {
+                val existingBot = mtprotoRepository.getBotByToken(config.botToken)
+                if (existingBot == null) {
+                    mtprotoRepository.insertBot(
+                        BotEntity(
+                            token = config.botToken,
+                            botId = config.botToken.substringBefore(':').toLongOrNull() ?: 8590847613L,
+                            firstName = config.botName.ifBlank { "TeleStream Bot" },
+                            username = config.botUsername.ifBlank { "telestream_bot" },
+                            isDefault = true
+                        )
+                    )
+                }
+            }
+        }
 
         // If server is currently running and bot token changed, re-poll
-        if (serverStats.value.isRunning && config.botToken.isNotBlank()) {
-            val ip = serverStats.value.ipAddress
-            val port = serverStats.value.port
-            botService.startPolling(ip, port)
+        if (restartIfRunning) {
+            val stats = serverStats.value
+            if (stats.isRunning) {
+                val ip = stats.ipAddress
+                val port = stats.port
+                botService.stopPolling()
+                if (config.botToken.isNotBlank()) {
+                    botService.startPolling(ip, port)
+                }
+            }
+            if (mtprotoStats.value.isRunning) {
+                restartMtprotoServer()
+            }
         }
     }
 
