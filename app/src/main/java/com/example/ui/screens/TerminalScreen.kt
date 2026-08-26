@@ -163,6 +163,9 @@ fun TerminalScreen(
                 env["HOME"] = appDir.absolutePath
                 env["TMPDIR"] = context.cacheDir.absolutePath
                 env["TELESTREAM_PORT"] = botConfig.serverPort.toString()
+                env["BOT_PORT"] = "8081"
+                if (botConfig.botToken.isNotBlank()) env["BOT_TOKEN"] = botConfig.botToken
+                if (botConfig.customBotApiUrl.isNotBlank()) env["CUSTOM_BOT_API_URL"] = botConfig.customBotApiUrl
                 if (botConfig.telegramApiId.isNotBlank()) env["TG_API_ID"] = botConfig.telegramApiId
                 if (botConfig.telegramApiHash.isNotBlank()) env["TG_API_HASH"] = botConfig.telegramApiHash
 
@@ -311,13 +314,14 @@ fun TerminalScreen(
 
         // Quick Preset Commands Row
         val quickCommands = listOf(
-            "📱 System Info" to "uname -a && uptime",
+            "🩺 Diagnose MTProto (8081)" to "echo '=== Testing Port 8081 MTProto Server ===' && curl -s -i -m 3 http://127.0.0.1:8081/ || echo 'Port 8081 unreachable'",
+            "🤖 Test Bot getMe" to "if [ -n \"\$BOT_TOKEN\" ]; then echo '=== Querying getMe via Port 8081 ===' && curl -s -m 5 \"http://127.0.0.1:8081/bot\$BOT_TOKEN/getMe\"; else echo 'No Bot Token configured in Bot Setup'; fi",
+            "🔌 Test Streaming (8080)" to "curl -I -m 2 http://127.0.0.1:8080/ || echo 'Port 8080 check complete'",
             "🌐 IP & Network" to "ip addr show || ifconfig",
-            "💾 Storage" to "df -h /data",
             "⚡ Ping Telegram" to "ping -c 3 api.telegram.org || ping -c 3 8.8.8.8",
-            "🔌 Test Port 8080" to "curl -I -m 2 http://127.0.0.1:8080/ || echo 'Port 8080 check complete'",
-            "🤖 Test Port 8081 (Local Bot)" to "curl -I -m 2 http://127.0.0.1:8081/ || echo 'Local bot API on 8081 not reached'",
-            "📁 List Files" to "ls -la",
+            "💾 Storage & RAM" to "df -h /data && free -m",
+            "📱 System Info" to "uname -a && uptime",
+            "📁 App Files" to "ls -la",
             "⚙️ Env Vars" to "env"
         )
 
