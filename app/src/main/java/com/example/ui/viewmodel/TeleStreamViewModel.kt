@@ -14,6 +14,9 @@ import com.example.data.db.AppDatabase
 import com.example.data.db.BotEntity
 import com.example.data.db.SandboxMessageEntity
 import com.example.data.db.ServerConfigEntity
+import com.example.diagnostics.DiagnosticStatus
+import com.example.diagnostics.DiagnosticsReport
+import com.example.diagnostics.SystemDiagnosticManager
 import com.example.data.model.AppReleaseInfo
 import com.example.data.model.BotConfig
 import com.example.data.model.FileCategory
@@ -158,6 +161,17 @@ class TeleStreamViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _botTestMessage = MutableStateFlow<String?>(null)
     val botTestMessage: StateFlow<String?> = _botTestMessage.asStateFlow()
+
+    // System Health Diagnostics
+    private val diagnosticManager = SystemDiagnosticManager(getApplication())
+    private val _diagnosticsReport = MutableStateFlow(DiagnosticsReport())
+    val diagnosticsReport: StateFlow<DiagnosticsReport> = _diagnosticsReport.asStateFlow()
+
+    private val _isDiagnosticsRunning = MutableStateFlow(false)
+    val isDiagnosticsRunning: StateFlow<Boolean> = _isDiagnosticsRunning.asStateFlow()
+
+    private val _showDiagnosticsDialog = MutableStateFlow(false)
+    val showDiagnosticsDialog: StateFlow<Boolean> = _showDiagnosticsDialog.asStateFlow()
 
     init {
         // Seed some sample streams if first launch
@@ -730,5 +744,34 @@ class TeleStreamViewModel(application: Application) : AndroidViewModel(applicati
 
     fun dismissUpdateStatus() {
         updateManager.resetStatus()
+    }
+
+    fun openDiagnostics() {
+        _showDiagnosticsDialog.value = true
+        runDiagnostics()
+    }
+
+    fun closeDiagnostics() {
+        _showDiagnosticsDialog.value = true // will be handled or closed
+        _showDiagnosticsDialog.value = false
+    }
+
+    fun runDiagnostics() {
+        if (_isDiagnosticsRunning.value) return
+        _isDiagnosticsRunning.value = true
+        viewModelScope.launch {
+            try {
+                diagnosticManager.runFullDiagnostics(
+                    botConfig = botConfig.value,
+                    httpServerPort = serverStats.value.port,
+                    mtprotoServerPort = mtprotoConfig.value.port,
+                    onProgress = { report ->
+                        _diagnosticsReport.value = report
+                    }
+                )
+            } finally {
+                _isDiagnosticsRunning.value = false
+            }
+        }
     }
 }

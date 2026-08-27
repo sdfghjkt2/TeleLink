@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FolderOpen
@@ -63,6 +64,7 @@ import com.example.data.model.UpdateStatus
 import com.example.ui.components.FileItemCard
 import com.example.ui.components.MtprotoServerStatusCard
 import com.example.ui.components.ServerStatusHero
+import com.example.ui.components.SystemDiagnosticsDialog
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.ServerEmerald
 import com.example.ui.theme.TelegramBlue
@@ -85,6 +87,18 @@ fun DashboardScreen(
     val botConfig by viewModel.botConfig.collectAsStateWithLifecycle()
     val recentFiles by viewModel.filteredFiles.collectAsStateWithLifecycle()
     val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
+    val showDiagnosticsDialog by viewModel.showDiagnosticsDialog.collectAsStateWithLifecycle()
+    val diagnosticsReport by viewModel.diagnosticsReport.collectAsStateWithLifecycle()
+    val isDiagnosticsRunning by viewModel.isDiagnosticsRunning.collectAsStateWithLifecycle()
+
+    if (showDiagnosticsDialog) {
+        SystemDiagnosticsDialog(
+            report = diagnosticsReport,
+            isRunning = isDiagnosticsRunning,
+            onRunDiagnostics = { viewModel.runDiagnostics() },
+            onDismiss = { viewModel.closeDiagnostics() }
+        )
+    }
 
     LazyColumn(
         modifier = modifier
@@ -184,7 +198,8 @@ fun DashboardScreen(
                 isRunning = mtprotoStats.isRunning,
                 port = mtprotoConfig.port,
                 totalRequests = mtprotoStats.totalRequests,
-                onToggle = { viewModel.toggleMtprotoServer() }
+                onToggle = { viewModel.toggleMtprotoServer() },
+                onOpenDiagnostics = { viewModel.openDiagnostics() }
             )
         }
 
@@ -213,12 +228,26 @@ fun DashboardScreen(
             ) {
                 FilledTonalButton(
                     onClick = onOpenCreateDialog,
-                    modifier = Modifier.weight(1f).height(46.dp),
+                    modifier = Modifier.weight(1f).height(46.dp).testTag("add_stream_quick_btn"),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Add Stream", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+
+                FilledTonalButton(
+                    onClick = { viewModel.openDiagnostics() },
+                    modifier = Modifier.weight(1.1f).height(46.dp).testTag("dashboard_debug_btn"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = CyberCyan.copy(alpha = 0.15f),
+                        contentColor = CyberCyan
+                    )
+                ) {
+                    Icon(imageVector = Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Debug Suite", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
 
                 Button(
@@ -231,13 +260,13 @@ fun DashboardScreen(
                             viewModel.copyToClipboard(url, "Web Portal Link")
                         }
                     },
-                    modifier = Modifier.weight(1.2f).height(46.dp),
+                    modifier = Modifier.weight(1.1f).height(46.dp).testTag("open_web_hub_btn"),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = TelegramBlue)
                 ) {
                     Icon(imageVector = Icons.Default.Language, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Open Web Hub", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Web Hub", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
         }

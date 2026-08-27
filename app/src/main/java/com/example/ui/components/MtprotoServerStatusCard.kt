@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -55,7 +56,8 @@ fun MtprotoServerStatusCard(
     port: Int,
     modifier: Modifier = Modifier,
     totalRequests: Long = 0,
-    onToggle: (() -> Unit)? = null
+    onToggle: (() -> Unit)? = null,
+    onOpenDiagnostics: (() -> Unit)? = null
 ) {
     val statusColor by animateColorAsState(
         targetValue = if (isRunning) ServerEmerald else Color(0xFFFF5252),
@@ -191,21 +193,44 @@ fun MtprotoServerStatusCard(
                 }
             }
 
-            if (onToggle != null) {
-                IconButton(
-                    onClick = onToggle,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(statusColor.copy(alpha = 0.12f))
-                        .testTag("mtproto_toggle_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PowerSettingsNew,
-                        contentDescription = "Toggle MTProto Server",
-                        tint = statusColor,
-                        modifier = Modifier.size(18.dp)
-                    )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (onOpenDiagnostics != null) {
+                    IconButton(
+                        onClick = onOpenDiagnostics,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(CyberCyan.copy(alpha = 0.12f))
+                            .testTag("mtproto_diag_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BugReport,
+                            contentDescription = "Run System Diagnostics",
+                            tint = CyberCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                if (onToggle != null) {
+                    IconButton(
+                        onClick = onToggle,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(statusColor.copy(alpha = 0.12f))
+                            .testTag("mtproto_toggle_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PowerSettingsNew,
+                            contentDescription = "Toggle MTProto Server",
+                            tint = statusColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
